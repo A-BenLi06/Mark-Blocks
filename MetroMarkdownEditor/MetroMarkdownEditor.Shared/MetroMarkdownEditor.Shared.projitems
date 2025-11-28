@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>a1cbc047-177a-404f-a7b4-e26ae4980ed1</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>MetroMarkdownEditor</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ApplicationDefinition Include="$(MSBuildThisFileDirectory)App.xaml">
+      <SubType>Designer</SubType>
+    </ApplicationDefinition>
+    <Compile Include="$(MSBuildThisFileDirectory)App.xaml.cs">
+      <DependentUpon>App.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="$(MSBuildThisFileDirectory)Common\RelayCommand.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Converters\ViewModeToGridLengthConverter.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Converters\ViewModeToVisibilityConverter.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\RecentFileItem.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\RecentFileService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\ThemeService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ViewModels\BaseViewModel.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ViewModels\DocumentViewModel.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ViewModels\EditorNavigationRequest.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ViewModels\EditorViewMode.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ViewModels\EditorViewModel.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ViewModels\MainViewModel.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ViewModels\ViewModelLocator.cs" />
+  </ItemGroup>
+</Project>
