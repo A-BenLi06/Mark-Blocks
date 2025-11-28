@@ -1,0 +1,16 @@
+<SettingsFlyout
+    x:Class="MetroMarkdownEditor.ThemeSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Theme"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
+
+    <StackPanel Margin="24,24,24,24">
+        <TextBlock Text="Switch between light and dark for the editor and preview."
+                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                   Opacity="0.6" />
+        <ToggleSwitch Header="Dark theme"
+                      IsOn="{Binding IsDarkTheme, Mode=TwoWay}" />
+    </StackPanel>
+</SettingsFlyout>
