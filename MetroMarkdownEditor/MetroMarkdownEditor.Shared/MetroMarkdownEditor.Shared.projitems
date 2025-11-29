@@ -21,6 +21,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Services\RecentFileItem.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\RecentFileService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\ThemeService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownRenderService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\BaseViewModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\DocumentViewModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\EditorNavigationRequest.cs" />

@@ -57,8 +57,8 @@ namespace MetroMarkdownEditor.Services
                     a { color:" + accent + @"; text-decoration:none; }
                     a:hover { text-decoration:underline; }
                     img { max-width:100%; height:auto; display:block; margin:12px 0; }
-                    pre { background:" + codeBackground + @"; color:" + foreground + @"; padding:12px; overflow-x:auto; border:1px solid " + border + @"; border-radius:4px; }
-                    code { font-family:'Consolas','Courier New',monospace; color:" + codeAccent + @"; }
+                    pre { padding:12px; overflow-x:auto; border-radius:4px; }
+                    code { font-family:'Consolas','Courier New',monospace; }
                     ul { padding-left:20px; }
                     li { margin:6px 0; }
                     table { width:100%; border-collapse:collapse; margin:12px 0; }

@@ -82,7 +82,9 @@ namespace MetroMarkdownEditor
 #if !WINDOWS_PHONE_APP
         private void OnCommandsRequested(SettingsPane sender, SettingsPaneCommandsRequestedEventArgs args)
         {
-            args.Request.ApplicationCommands.Add(new SettingsCommand("theme", "Theme", _ => ShowThemeSettings()));
+            // 我为你生成了一个随机的 GUID：28a24559-0017-4959-9b93-669e20032908
+            // 使用 GUID 字符串作为 ID 可以解决这个 FormatException
+            args.Request.ApplicationCommands.Add(new SettingsCommand("28a24559-0017-4959-9b93-669e20032908", "Personalization", _ => ShowThemeSettings()));
         }
 
         private void ShowThemeSettings()

@@ -1,12 +1,14 @@
+using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
 using MetroMarkdownEditor.Services;
 using MetroMarkdownEditor.ViewModels;
 using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Navigation;
 using Windows.UI.Xaml.Controls.Primitives;
+using Windows.UI.Xaml.Navigation;
 
 namespace MetroMarkdownEditor
 {
@@ -18,12 +20,14 @@ namespace MetroMarkdownEditor
         }
 
         private readonly DispatcherTimer _typingTimer;
+        private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
+        private bool _skeletonLoaded;
+        private ElementTheme _lastTheme = ElementTheme.Light;
 
         public EditorPage()
         {
             InitializeComponent();
-            _typingTimer = new DispatcherTimer();
-            _typingTimer.Interval = System.TimeSpan.FromMilliseconds(500);
+            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _typingTimer.Tick += TypingTimer_Tick;
             ApplyEditorStyle();
         }
@@ -62,7 +66,7 @@ namespace MetroMarkdownEditor
                 SyncEditorText();
             }
 
-            RenderPreview();
+            await RenderPreviewAsync();
         }
 
         protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -77,9 +81,9 @@ namespace MetroMarkdownEditor
 
         private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == "PreviewHtml")
+            if (e.PropertyName == "PreviewContent")
             {
-                RenderPreview();
+                var _ = RenderPreviewAsync();
             }
             else if (e.PropertyName == "ActiveDocument")
             {
@@ -87,15 +91,27 @@ namespace MetroMarkdownEditor
             }
         }
 
-        private void RenderPreview()
+        private async Task RenderPreviewAsync()
         {
-            if (ViewModel != null && !string.IsNullOrEmpty(ViewModel.PreviewHtml))
+            if (ViewModel == null)
             {
-                PreviewWebView.NavigateToString(ViewModel.PreviewHtml);
+                return;
             }
+
+            var theme = GetCurrentTheme();
+            ViewModel.SetTheme(theme);
+
+            if (!_skeletonLoaded || theme != _lastTheme)
+            {
+                await _renderService.LoadSkeletonAsync(PreviewWebView, ViewModel.PreviewCss, theme);
+                _skeletonLoaded = true;
+                _lastTheme = theme;
+            }
+
+            await _renderService.UpdateContentAsync(PreviewWebView, ViewModel.PreviewContent ?? string.Empty);
         }
 
-        private void BackButton_Click(object sender, Windows.UI.Xaml.RoutedEventArgs e)
+        private void BackButton_Click(object sender, RoutedEventArgs e)
         {
             var frame = Frame;
             if (frame != null)
@@ -112,16 +128,10 @@ namespace MetroMarkdownEditor
             }
 
             string text;
-            // 1. 获取文本 (此时里面全是 \r)
             EditorBox.Document.GetText(TextGetOptions.None, out text);
-            
             if (text != null)
             {
-                // 【核心修复】将 \r 替换�?\n，让 Markdown 解析器能识别换行
                 text = text.Replace('\r', '\n');
-
-                // 2. 清理末尾 (RichEditBox 总是会在最后多给一�?\0 和一个隐藏的换行)
-                // 注意：因为上面已经把 \r 换成�?\n，所以这里要 TrimEnd \n
                 text = text.TrimEnd('\0', '\n');
             }
 
@@ -136,7 +146,7 @@ namespace MetroMarkdownEditor
             if (ViewModel != null)
             {
                 ViewModel.RefreshPreview();
-                RenderPreview();
+                var _ = RenderPreviewAsync();
             }
         }
 
@@ -160,15 +170,17 @@ namespace MetroMarkdownEditor
 
         private async void ExportMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (ViewModel == null)
-            {
-                return;
-            }
-
             var item = sender as MenuFlyoutItem;
-            var tag = item != null ? item.Tag as string : null;
-            await ViewModel.ExportAsync(tag);
-            RenderPreview();
+            if (item == null) return;
+
+            // ��ȡ��ʽ (md, html, pdf)
+            string format = item.Tag.ToString();
+
+            // ���� ViewModel �ĵ���
+            if (ViewModel != null)
+            {
+                await ViewModel.ExportAsync(format);
+            }
         }
 
         private void ApplyEditorStyle()
@@ -181,6 +193,17 @@ namespace MetroMarkdownEditor
             var format = EditorBox.Document.GetDefaultParagraphFormat();
             format.SetLineSpacing(LineSpacingRule.Multiple, 1.5f);
             EditorBox.Document.SetDefaultParagraphFormat(format);
+        }
+
+        private ElementTheme GetCurrentTheme()
+        {
+            var root = Window.Current.Content as FrameworkElement;
+            if (root != null)
+            {
+                return root.RequestedTheme;
+            }
+
+            return ElementTheme.Light;
         }
     }
 }
