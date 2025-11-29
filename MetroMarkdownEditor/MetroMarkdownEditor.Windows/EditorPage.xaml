@@ -196,17 +196,16 @@
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Editor}">
                 <Grid>
-                    <TextBox x:Name="SourceTextBox"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                             FontFamily="Consolas"
-                             FontSize="15"
-                             Padding="12"
-                             Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                             Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                             TextChanged="SourceTextBox_TextChanged"/>
+                    <RichEditBox x:Name="EditorBox"
+                                 AcceptsReturn="True"
+                                 IsSpellCheckEnabled="False"
+                                 FontFamily="Consolas"
+                                 FontSize="16"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Padding="30,24,30,24"
+                                 Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                 TextChanged="EditorBox_TextChanged" />
                 </Grid>
             </Border>
 

@@ -2,12 +2,11 @@ using System.ComponentModel;
 using System.Linq;
 using MetroMarkdownEditor.Services;
 using MetroMarkdownEditor.ViewModels;
+using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Navigation;
 using Windows.UI.Xaml.Controls.Primitives;
-
-using Windows.UI.Core;
 
 namespace MetroMarkdownEditor
 {
@@ -26,6 +25,7 @@ namespace MetroMarkdownEditor
             _typingTimer = new DispatcherTimer();
             _typingTimer.Interval = System.TimeSpan.FromMilliseconds(500);
             _typingTimer.Tick += TypingTimer_Tick;
+            ApplyEditorStyle();
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -104,14 +104,28 @@ namespace MetroMarkdownEditor
             }
         }
 
-        private void SourceTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        private void EditorBox_TextChanged(object sender, RoutedEventArgs e)
         {
             if (ViewModel == null || ViewModel.ActiveDocument == null)
             {
                 return;
             }
 
-            ViewModel.SetContentFromEditor(SourceTextBox.Text);
+            string text;
+            // 1. 获取文本 (此时里面全是 \r)
+            EditorBox.Document.GetText(TextGetOptions.None, out text);
+            
+            if (text != null)
+            {
+                // 【核心修复】将 \r 替换�?\n，让 Markdown 解析器能识别换行
+                text = text.Replace('\r', '\n');
+
+                // 2. 清理末尾 (RichEditBox 总是会在最后多给一�?\0 和一个隐藏的换行)
+                // 注意：因为上面已经把 \r 换成�?\n，所以这里要 TrimEnd \n
+                text = text.TrimEnd('\0', '\n');
+            }
+
+            ViewModel.SetContentFromEditor(text);
             _typingTimer.Stop();
             _typingTimer.Start();
         }
@@ -128,9 +142,10 @@ namespace MetroMarkdownEditor
 
         private void SyncEditorText()
         {
-            if (ViewModel != null && ViewModel.ActiveDocument != null && SourceTextBox != null)
+            if (ViewModel != null && ViewModel.ActiveDocument != null && EditorBox != null)
             {
-                SourceTextBox.Text = ViewModel.ActiveDocument.Content ?? string.Empty;
+                var text = ViewModel.ActiveDocument.Content ?? string.Empty;
+                EditorBox.Document.SetText(TextSetOptions.None, text);
             }
         }
 
@@ -154,6 +169,18 @@ namespace MetroMarkdownEditor
             var tag = item != null ? item.Tag as string : null;
             await ViewModel.ExportAsync(tag);
             RenderPreview();
+        }
+
+        private void ApplyEditorStyle()
+        {
+            if (EditorBox == null)
+            {
+                return;
+            }
+
+            var format = EditorBox.Document.GetDefaultParagraphFormat();
+            format.SetLineSpacing(LineSpacingRule.Multiple, 1.5f);
+            EditorBox.Document.SetDefaultParagraphFormat(format);
         }
     }
 }
