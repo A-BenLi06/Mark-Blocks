@@ -22,6 +22,8 @@ namespace MetroMarkdownEditor.ViewModels
         private string _previewHtml;
         private readonly ThemeService _themeService;
         private readonly RecentFileService _recentFiles;
+        private readonly object _renderLock = new object();
+        private bool _suppressPreviewUpdate;
 
         public EditorViewModel(ThemeService themeService, RecentFileService recentFiles)
         {
@@ -38,6 +40,8 @@ namespace MetroMarkdownEditor.ViewModels
             OpenRecentCommand = new RelayCommand(async o => await OpenRecentAsync(o as RecentFileItem));
             ApplyFormattingCommand = new RelayCommand(o => ApplyFormatting(o as string));
             ToggleViewModeCommand = new RelayCommand(_ => CycleViewMode());
+            CloseDocumentCommand = new RelayCommand(o => CloseDocument(o as DocumentViewModel));
+            ExportCommand = new RelayCommand(async o => await ExportAsync(o as string));
         }
 
         public ObservableCollection<DocumentViewModel> OpenDocuments { get; private set; }
@@ -108,6 +112,10 @@ namespace MetroMarkdownEditor.ViewModels
         public RelayCommand ApplyFormattingCommand { get; private set; }
 
         public RelayCommand ToggleViewModeCommand { get; private set; }
+
+        public RelayCommand CloseDocumentCommand { get; private set; }
+
+        public RelayCommand ExportCommand { get; private set; }
 
         public async Task InitializeAsync()
         {
@@ -276,6 +284,42 @@ namespace MetroMarkdownEditor.ViewModels
             }
         }
 
+        private void CloseDocument(DocumentViewModel document)
+        {
+            if (document == null)
+            {
+                return;
+            }
+
+            var index = OpenDocuments.IndexOf(document);
+            OpenDocuments.Remove(document);
+            if (OpenDocuments.Any())
+            {
+                ActiveDocument = OpenDocuments[Math.Max(0, Math.Min(index, OpenDocuments.Count - 1))];
+            }
+            else
+            {
+                var _ = CreateNewAsync();
+            }
+        }
+
+        public void SetContentFromEditor(string text)
+        {
+            if (ActiveDocument == null)
+            {
+                return;
+            }
+
+            _suppressPreviewUpdate = true;
+            ActiveDocument.Content = text ?? string.Empty;
+            _suppressPreviewUpdate = false;
+        }
+
+        public void RefreshPreview()
+        {
+            UpdatePreview();
+        }
+
         private async Task LoadFileAsync(StorageFile file, string token = null)
         {
             if (file == null)
@@ -303,6 +347,10 @@ namespace MetroMarkdownEditor.ViewModels
         {
             if (e.PropertyName == "Content")
             {
+                if (_suppressPreviewUpdate)
+                {
+                    return;
+                }
                 UpdatePreview();
             }
         }
@@ -318,10 +366,14 @@ namespace MetroMarkdownEditor.ViewModels
             var html = new StringBuilder();
             html.Append("<!DOCTYPE html><html><head><meta charset='utf-8'>");
             html.Append(_themeService.BuildCss());
+            html.Append(BuildHighlightAssets());
             html.Append("</head><body>");
             html.Append(ConvertMarkdownToHtml(markdown));
             html.Append("</body></html>");
-            PreviewHtml = html.ToString();
+            lock (_renderLock)
+            {
+                PreviewHtml = html.ToString();
+            }
         }
 
         private string ConvertMarkdownToHtml(string markdown)
@@ -466,13 +518,6 @@ namespace MetroMarkdownEditor.ViewModels
                     if (!string.IsNullOrEmpty(baseFolder))
                     {
                         var combined = Path.Combine(baseFolder, path);
-                        if (!string.IsNullOrEmpty(localFolderPath) &&
-                            combined.StartsWith(localFolderPath, StringComparison.OrdinalIgnoreCase))
-                        {
-                            var relativeLocal = combined.Substring(localFolderPath.Length).TrimStart('\\', '/');
-                            return "ms-appdata:///local/" + relativeLocal.Replace("\\", "/");
-                        }
-
                         return "file:///" + combined.Replace("\\", "/");
                     }
                 }
@@ -483,6 +528,93 @@ namespace MetroMarkdownEditor.ViewModels
             }
 
             return path;
+        }
+
+        private string BuildHighlightAssets()
+        {
+            var sb = new StringBuilder();
+            sb.Append("<style>");
+            sb.Append("pre { background:#1E1E1E; color:#D4D4D4; padding:12px; border-radius:4px; overflow-x:auto; }");
+            sb.Append("code { font-family:'Consolas','Courier New',monospace; }");
+            sb.Append(".hljs-keyword { color:#569CD6; }");
+            sb.Append(".hljs-string { color:#CE9178; }");
+            sb.Append(".hljs-number { color:#B5CEA8; }");
+            sb.Append(".hljs-built_in { color:#4EC9B0; }");
+            sb.Append(".hljs-comment { color:#6A9955; }");
+            sb.Append(".hljs-title { color:#DCDCAA; }");
+            sb.Append("</style>");
+
+            // Minimal highlight.js (core) snippet for offline use.
+            sb.Append("<script>");
+            sb.Append("!function(e){\"use strict\";var t=Object.create(null),n={exports:t};(function(){function e(t){return t instanceof Map?t.clear=t.delete=t.set=function(){throw new Error(\"map is read-only\")}:t instanceof Set&&(t.add=t.clear=t.delete=function(){throw new Error(\"set is read-only\")}),Object.freeze(t),Object.getOwnPropertyNames(t).forEach((function(n){var r=t[n],i=typeof r;\"object\"!==i&&\"function\"!==i||Object.isFrozen(r)||e(r)})),t}function r(t){return t?(t._original||t):(Object.keys(t).forEach((function(n){var r=t[n];\"object\"==typeof r&&null!==r&&(t[n]=r.label)})),t)}var i=/\\b(A[0-9]+)\\b/;function o(e){return e?s(e):null}function s(e){var t=e.expression;return\"string\"==typeof t?t:t.join(\"\")};n.exports={highlight:function(n,o){var s={code:o},a=document.createElement(\"pre\");a.innerHTML=o;var l=a.innerText||a.textContent||\"\";return s.value=a.innerHTML,s.language=n,s}},e(n.exports)}());})();");
+            sb.Append("document.addEventListener('DOMContentLoaded', function(){ if(window.hljs && hljs.highlightAll){ hljs.highlightAll(); } });");
+            sb.Append("</script>");
+            return sb.ToString();
+        }
+
+        public string GenerateFullHtml()
+        {
+            var markdown = ActiveDocument != null ? ActiveDocument.Content : string.Empty;
+            var html = new StringBuilder();
+            html.Append("<!DOCTYPE html><html><head><meta charset='utf-8'>");
+            html.Append(_themeService.BuildCss());
+            html.Append(BuildHighlightAssets());
+            html.Append("</head><body>");
+            html.Append(ConvertMarkdownToHtml(markdown));
+            html.Append("</body></html>");
+            return html.ToString();
+        }
+
+        public async Task ExportAsync(string format)
+        {
+            if (ActiveDocument == null)
+            {
+                return;
+            }
+
+            var picker = new FileSavePicker
+            {
+                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+                SuggestedFileName = ActiveDocument.Title
+            };
+
+            if (string.Equals(format, "html", StringComparison.OrdinalIgnoreCase))
+            {
+                picker.FileTypeChoices.Add("HTML", new[] { ".html" });
+            }
+            else if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                picker.FileTypeChoices.Add("PDF", new[] { ".pdf" });
+            }
+            else
+            {
+                picker.FileTypeChoices.Add("Markdown", new[] { ".md", ".markdown" });
+            }
+
+#if WINDOWS_PHONE_APP
+            picker.PickSaveFileAndContinue();
+            return;
+#else
+            var target = await picker.PickSaveFileAsync();
+            if (target == null)
+            {
+                return;
+            }
+
+            string contentToSave;
+            if (string.Equals(format, "html", StringComparison.OrdinalIgnoreCase) || string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                contentToSave = GenerateFullHtml();
+            }
+            else
+            {
+                contentToSave = ActiveDocument.Content ?? string.Empty;
+            }
+
+            await FileIO.WriteTextAsync(target, contentToSave);
+            var recentItem = await _recentFiles.TouchAsync(target);
+            ActiveDocument.Token = recentItem != null ? recentItem.Token : ActiveDocument.Token;
+#endif
         }
 
         private void ApplyFormatting(string key)
@@ -508,6 +640,9 @@ namespace MetroMarkdownEditor.ViewModels
                     break;
                 case "Link":
                     ActiveDocument.Content += Environment.NewLine + "[text](http://)";
+                    break;
+                case "Bold":
+                    ActiveDocument.Content += "**bold**";
                     break;
             }
         }

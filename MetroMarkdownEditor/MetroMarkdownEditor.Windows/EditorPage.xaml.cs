@@ -2,8 +2,12 @@ using System.ComponentModel;
 using System.Linq;
 using MetroMarkdownEditor.Services;
 using MetroMarkdownEditor.ViewModels;
+using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Navigation;
+using Windows.UI.Xaml.Controls.Primitives;
+
+using Windows.UI.Core;
 
 namespace MetroMarkdownEditor
 {
@@ -14,9 +18,14 @@ namespace MetroMarkdownEditor
             get { return DataContext as EditorViewModel; }
         }
 
+        private readonly DispatcherTimer _typingTimer;
+
         public EditorPage()
         {
             InitializeComponent();
+            _typingTimer = new DispatcherTimer();
+            _typingTimer.Interval = System.TimeSpan.FromMilliseconds(500);
+            _typingTimer.Tick += TypingTimer_Tick;
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -50,6 +59,7 @@ namespace MetroMarkdownEditor
                 {
                     await ViewModel.InitializeAsync();
                 }
+                SyncEditorText();
             }
 
             RenderPreview();
@@ -71,6 +81,10 @@ namespace MetroMarkdownEditor
             {
                 RenderPreview();
             }
+            else if (e.PropertyName == "ActiveDocument")
+            {
+                SyncEditorText();
+            }
         }
 
         private void RenderPreview()
@@ -88,6 +102,58 @@ namespace MetroMarkdownEditor
             {
                 frame.Navigate(typeof(MainPage));
             }
+        }
+
+        private void SourceTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (ViewModel == null || ViewModel.ActiveDocument == null)
+            {
+                return;
+            }
+
+            ViewModel.SetContentFromEditor(SourceTextBox.Text);
+            _typingTimer.Stop();
+            _typingTimer.Start();
+        }
+
+        private void TypingTimer_Tick(object sender, object e)
+        {
+            _typingTimer.Stop();
+            if (ViewModel != null)
+            {
+                ViewModel.RefreshPreview();
+                RenderPreview();
+            }
+        }
+
+        private void SyncEditorText()
+        {
+            if (ViewModel != null && ViewModel.ActiveDocument != null && SourceTextBox != null)
+            {
+                SourceTextBox.Text = ViewModel.ActiveDocument.Content ?? string.Empty;
+            }
+        }
+
+        private void ExportButton_Click(object sender, RoutedEventArgs e)
+        {
+            var element = sender as FrameworkElement;
+            if (element != null)
+            {
+                FlyoutBase.ShowAttachedFlyout(element);
+            }
+        }
+
+        private async void ExportMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel == null)
+            {
+                return;
+            }
+
+            var item = sender as MenuFlyoutItem;
+            var tag = item != null ? item.Tag as string : null;
+            await ViewModel.ExportAsync(tag);
+            RenderPreview();
         }
     }
 }

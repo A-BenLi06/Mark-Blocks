@@ -51,7 +51,7 @@ namespace MetroMarkdownEditor.Services
 
             return
                 @"<style>
-                    body { font-family:'Segoe UI', 'Helvetica Neue', sans-serif; padding:24px; margin:0; background:" + background + @"; color:" + foreground + @"; }
+                    body { font-family:'Segoe UI','Helvetica Neue',sans-serif; padding:32px; margin:0; background:" + background + @"; color:" + foreground + @"; line-height:1.6; }
                     h1,h2,h3,h4 { margin-top:24px; margin-bottom:12px; font-weight:600; }
                     p { margin: 12px 0; line-height:1.6; }
                     a { color:" + accent + @"; text-decoration:none; }

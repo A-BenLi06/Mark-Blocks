@@ -9,24 +9,33 @@
 
     <Page.BottomAppBar>
         <CommandBar>
+            <CommandBar.Content>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <AppBarButton Label="New" Icon="Add" Command="{Binding NewCommand}" />
+                    <AppBarButton Label="Open" Icon="Folder" Command="{Binding OpenCommand}" />
+                    <AppBarButton Label="Save" Icon="Save" Command="{Binding SaveCommand}" />
+                    <AppBarButton Label="Export" Icon="Upload" Click="ExportButton_Click">
+                        <AppBarButton.Flyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="To Markdown" Tag="md" Click="ExportMenuItem_Click" />
+                                <MenuFlyoutItem Text="To HTML" Tag="html" Click="ExportMenuItem_Click" />
+                                <MenuFlyoutItem Text="To PDF" Tag="pdf" Click="ExportMenuItem_Click" />
+                            </MenuFlyout>
+                        </AppBarButton.Flyout>
+                    </AppBarButton>
+                    <AppBarButton Label="Remove" Icon="Delete" Command="{Binding RemoveCommand}" />
+                </StackPanel>
+            </CommandBar.Content>
             <CommandBar.PrimaryCommands>
-                <AppBarButton Label="H1" Icon="FontSize" Command="{Binding ApplyFormattingCommand}" CommandParameter="H1" />
-                <AppBarButton Label="H2" Icon="FontIncrease" Command="{Binding ApplyFormattingCommand}" CommandParameter="H2" />
-                <AppBarButton Label="H3" Icon="FontDecrease" Command="{Binding ApplyFormattingCommand}" CommandParameter="H3" />
-                <AppBarButton Label="Checkbox" Icon="Accept" Command="{Binding ApplyFormattingCommand}" CommandParameter="Checkbox" />
-                <AppBarButton Label="Link" Icon="Link" Command="{Binding ApplyFormattingCommand}" CommandParameter="Link" />
-                <AppBarButton Label="Mode" Icon="Preview" Command="{Binding ToggleViewModeCommand}" />
+                <AppBarButton Label="H1" Icon="Edit" Command="{Binding ApplyFormattingCommand}" CommandParameter="H1" />
+                <AppBarButton Label="H2" Icon="Edit" Command="{Binding ApplyFormattingCommand}" CommandParameter="H2" />
+                <AppBarButton Label="Bold" Icon="Edit" Command="{Binding ApplyFormattingCommand}" CommandParameter="Bold" />
+                <AppBarButton Label="Mode" Icon="Refresh" Command="{Binding ToggleViewModeCommand}" />
             </CommandBar.PrimaryCommands>
-            <CommandBar.SecondaryCommands>
-                <AppBarButton Label="New" Icon="Add" Command="{Binding NewCommand}" />
-                <AppBarButton Label="Open" Icon="Folder" Command="{Binding OpenCommand}" />
-                <AppBarButton Label="Save" Icon="Save" Command="{Binding SaveCommand}" />
-                <AppBarButton Label="Remove File" Icon="Delete" Command="{Binding RemoveCommand}" />
-            </CommandBar.SecondaryCommands>
         </CommandBar>
     </Page.BottomAppBar>
 
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid x:Name="LayoutRoot" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -149,10 +158,28 @@
                     </ListView.ItemsPanel>
                     <ListView.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Title}"
-                                       FontSize="20"
-                                       FontWeight="Light"
-                                       Foreground="#FF999999" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Title}"
+                                           FontSize="20"
+                                           FontWeight="Light"
+                                           Foreground="#FF999999"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Content="&#xE106;"
+                                        FontFamily="Segoe UI Symbol"
+                                        FontSize="14"
+                                        Width="28"
+                                        Height="28"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Command="{Binding DataContext.CloseDocumentCommand, ElementName=LayoutRoot}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
@@ -169,16 +196,17 @@
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Editor}">
                 <Grid>
-                    <TextBox Text="{Binding ActiveDocument.Content, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBox x:Name="SourceTextBox"
                              AcceptsReturn="True"
-                             TextWrapping="NoWrap"
+                             TextWrapping="Wrap"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                              FontFamily="Consolas"
-                             FontSize="16"
+                             FontSize="15"
                              Padding="12"
                              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                             Foreground="{ThemeResource ApplicationForegroundThemeBrush}"/>
+                             Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                             TextChanged="SourceTextBox_TextChanged"/>
                 </Grid>
             </Border>
 

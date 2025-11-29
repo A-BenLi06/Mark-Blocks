@@ -6,6 +6,17 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     DataContext="{Binding Main, Source={StaticResource Locator}}">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#2D2D30" /> <SolidColorBrush x:Key="TilePathTextBrush" Color="#999999" />   </ResourceDictionary>
+                
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#E6E6E6" /> <SolidColorBrush x:Key="TilePathTextBrush" Color="#666666" />   </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Page.Resources>
 
     <Grid x:Name="LayoutRoot" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
@@ -15,7 +26,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Margin="48,36,48,24">
-            <TextBlock Text="Metro Markdown"
+            <TextBlock Text="MetroMarkdownEditor"
                        Style="{StaticResource HeaderTextBlockStyle}"
                        FontSize="42"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}" />
@@ -50,7 +61,7 @@
             <GridView ItemsSource="{Binding RecentFiles}" IsItemClickEnabled="False" SelectionMode="None" Margin="0,0,0,12">
                 <GridView.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <ItemsWrapGrid ItemWidth="150" ItemHeight="150" />
+                        <WrapGrid ItemWidth="320" ItemHeight="160" Orientation="Horizontal" />
                     </ItemsPanelTemplate>
                 </GridView.ItemsPanel>
                 <GridView.ItemTemplate>
@@ -58,20 +69,37 @@
                         <Button Command="{Binding DataContext.OpenRecentCommand, ElementName=LayoutRoot}"
                                 CommandParameter="{Binding}"
                                 BorderThickness="0"
-                                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-                            <Grid Width="150" Height="150">
-                                <StackPanel Margin="12">
+                                Background="Transparent"
+                                Padding="0" 
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch">
+                            <Border Width="310"
+                                    Height="145"
+                                    Background="{ThemeResource TileBackgroundBrush}"
+                                    Margin="5"
+                                    Padding="12">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
                                     <TextBlock Text="{Binding Name}"
+                                               FontSize="16"
+                                               FontWeight="SemiBold"
                                                TextWrapping="Wrap"
-                                               FontSize="18"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Top"
                                                Foreground="{ThemeResource ApplicationForegroundThemeBrush}" />
-                                    <TextBlock Text="{Binding Path}"
-                                               Margin="0,8,0,0"
-                                               TextWrapping="WrapWholeWords"
-                                               Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                                               Opacity="0.6" />
-                                </StackPanel>
-                            </Grid>
+                                    <TextBlock Grid.Row="1"
+                                               Text="{Binding Path}"
+                                               FontSize="12"
+                                               Foreground="{ThemeResource TilePathTextBrush}"
+                                               TextWrapping="NoWrap"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,5,0,0" />
+                                </Grid>
+                            </Border>
                         </Button>
                     </DataTemplate>
                 </GridView.ItemTemplate>
