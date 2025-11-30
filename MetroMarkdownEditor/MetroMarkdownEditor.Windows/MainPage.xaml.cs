@@ -1,6 +1,7 @@
 using MetroMarkdownEditor.ViewModels;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media.Animation;
 using Windows.UI.Xaml.Navigation;
 
 namespace MetroMarkdownEditor
@@ -49,6 +50,16 @@ namespace MetroMarkdownEditor
         private void OnNavigationRequested(object sender, EditorNavigationRequest e)
         {
             Frame.Navigate(typeof(EditorPage), e);
+        }
+
+        private void RecentFiles_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var request = new EditorNavigationRequest
+            {
+                Mode = EditorLaunchMode.Recent,
+                RecentFile = e.ClickedItem as Services.RecentFileItem
+            };
+            Frame.Navigate(typeof(EditorPage), request);
         }
     }
 }

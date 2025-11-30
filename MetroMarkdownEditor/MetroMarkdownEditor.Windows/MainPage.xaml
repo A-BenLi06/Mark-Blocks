@@ -18,6 +18,12 @@
         </ResourceDictionary>
     </Page.Resources>
 
+    <Page.Transitions>
+        <TransitionCollection>
+            <EntranceThemeTransition />
+        </TransitionCollection>
+    </Page.Transitions>
+
     <Grid x:Name="LayoutRoot" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -58,7 +64,16 @@
                        Margin="0,0,0,12"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        FontSize="18" />
-            <GridView ItemsSource="{Binding RecentFiles}" IsItemClickEnabled="False" SelectionMode="None" Margin="0,0,0,12">
+            <GridView ItemsSource="{Binding RecentFiles}"
+                      IsItemClickEnabled="True"
+                      SelectionMode="None"
+                      Margin="0,0,0,12"
+                      ItemClick="RecentFiles_ItemClick">
+                <GridView.ItemContainerTransitions>
+                    <TransitionCollection>
+                        <EntranceThemeTransition IsStaggeringEnabled="True" FromHorizontalOffset="400" />
+                    </TransitionCollection>
+                </GridView.ItemContainerTransitions> 
                 <GridView.ItemsPanel>
                     <ItemsPanelTemplate>
                         <WrapGrid ItemWidth="320" ItemHeight="160" Orientation="Horizontal" />

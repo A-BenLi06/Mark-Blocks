@@ -157,6 +157,12 @@
         </Style>
     </Page.Resources>
 
+    <Page.Transitions>
+        <TransitionCollection>
+            <EntranceThemeTransition />
+        </TransitionCollection>
+    </Page.Transitions>
+
     <Page.BottomAppBar>
         <CommandBar>
             <CommandBar.Content>

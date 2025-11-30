@@ -31,9 +31,11 @@ namespace MetroMarkdownEditor.ViewModels
 
         public RelayCommand OpenRecentCommand { get; private set; }
 
-        public Task InitializeAsync()
+        public async Task InitializeAsync()
         {
-            return _recentFiles.InitializeAsync();
+            _recentFiles.Items.Clear();
+            await Task.Delay(100);
+            await _recentFiles.InitializeAsync();
         }
 
         private void RequestNavigation(EditorLaunchMode mode, RecentFileItem recent = null)
