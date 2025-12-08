@@ -1,0 +1,2 @@
+MainPackage=C:\Users\ben_l\Documents\Coding\CMetro\MetroMarkdownEditor\MetroMarkdownEditor\MetroMarkdownEditor.Windows\bin\ARM\Release\MetroMarkdownEditor.Windows_1.0.0.0_ARM.appx
+SymbolPackage=C:\Users\ben_l\Documents\Coding\CMetro\MetroMarkdownEditor\MetroMarkdownEditor\MetroMarkdownEditor.Windows\AppPackages\MetroMarkdownEditor.Windows_1.0.0.0_Test\MetroMarkdownEditor.Windows_1.0.0.0_ARM.appxsym
