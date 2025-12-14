@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
@@ -27,6 +28,7 @@ namespace MetroMarkdownEditor.ViewModels
         private ElementTheme _currentTheme = ElementTheme.Light;
         private string _previewContent;
         private string _previewCss;
+        private IReadOnlyList<MarkdownBlock> _previewBlocks = new List<MarkdownBlock>();
 
         public EditorViewModel(ThemeService themeService, RecentFileService recentFiles)
         {
@@ -120,6 +122,19 @@ namespace MetroMarkdownEditor.ViewModels
                 if (_previewCss != value)
                 {
                     _previewCss = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        public IReadOnlyList<MarkdownBlock> PreviewBlocks
+        {
+            get { return _previewBlocks; }
+            private set
+            {
+                if (!ReferenceEquals(_previewBlocks, value))
+                {
+                    _previewBlocks = value ?? new List<MarkdownBlock>();
                     RaisePropertyChanged();
                 }
             }
@@ -317,7 +332,9 @@ namespace MetroMarkdownEditor.ViewModels
 
             var markdown = ActiveDocument.Content ?? string.Empty;
             PreviewCss = _themeService.BuildCss();
-            PreviewContent = ConvertMarkdownToHtml(markdown);
+            var rendered = _renderService.RenderMarkdown(markdown);
+            PreviewBlocks = rendered.Blocks;
+            PreviewContent = NormalizeImageSourcesInHtml(rendered.Html);
         }
 
         private string ConvertMarkdownToHtml(string markdown)

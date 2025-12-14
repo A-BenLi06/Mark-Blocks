@@ -1,5 +1,5 @@
 <SettingsFlyout
-    x:Class="MetroMarkdownEditor.ThemeSettings"
+    x:Class="MetroMarkdownEditor.Windows.ThemeSettings"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Theme"

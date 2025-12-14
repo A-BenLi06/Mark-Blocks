@@ -1,4 +1,5 @@
 using MetroMarkdownEditor.ViewModels;
+using MetroMarkdownEditor.Windows;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Media.Animation;

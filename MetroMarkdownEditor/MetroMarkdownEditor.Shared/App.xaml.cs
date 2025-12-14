@@ -1,8 +1,9 @@
-using System;
+ï»¿using System;
 using MetroMarkdownEditor.ViewModels;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 #if !WINDOWS_PHONE_APP
+using MetroMarkdownEditor.Windows;
 using Windows.UI.ApplicationSettings;
 #endif
 using Windows.UI.Xaml;
@@ -82,9 +83,10 @@ namespace MetroMarkdownEditor
 #if !WINDOWS_PHONE_APP
         private void OnCommandsRequested(SettingsPane sender, SettingsPaneCommandsRequestedEventArgs args)
         {
-            // ÎÒÎªÄãÉú³ÉÁËÒ»¸öËæ»úµÄ GUID£º28a24559-0017-4959-9b93-669e20032908
-            // Ê¹ÓÃ GUID ×Ö·û´®×÷Îª ID ¿ÉÒÔ½â¾öÕâ¸ö FormatException
+            // æˆ‘ä¸ºä½ ç”Ÿæˆäº†ä¸€ä¸ªéšæœºçš„ GUIDï¼š28a24559-0017-4959-9b93-669e20032908
+            // ä½¿ç”¨ GUID å­—ç¬¦ä¸²ä½œä¸º ID å¯ä»¥è§£å†³è¿™ä¸ª FormatException
             args.Request.ApplicationCommands.Add(new SettingsCommand("28a24559-0017-4959-9b93-669e20032908", "Personalization", _ => ShowThemeSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("c5f5e4f5-71d8-4a0c-bd27-3f58b6c6fbc0", "Auto Save", _ => ShowAutoSaveSettings()));
         }
 
         private void ShowThemeSettings()
@@ -96,6 +98,13 @@ namespace MetroMarkdownEditor
                 flyout.DataContext = locator.Theme;
             }
 
+            flyout.Show();
+        }
+
+        private void ShowAutoSaveSettings()
+        {
+            var flyout = new AutoSaveSettings();
+            flyout.DataContext = Services.AutoSaveService.Instance;
             flyout.Show();
         }
 #endif

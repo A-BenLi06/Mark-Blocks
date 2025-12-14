@@ -1,7 +1,7 @@
 using MetroMarkdownEditor.ViewModels;
 using Windows.UI.Xaml.Controls;
 
-namespace MetroMarkdownEditor
+namespace MetroMarkdownEditor.Windows
 {
     public sealed partial class ThemeSettings : SettingsFlyout
     {
