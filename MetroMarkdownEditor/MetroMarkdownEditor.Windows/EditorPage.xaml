@@ -4,10 +4,13 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:common="using:MetroMarkdownEditor.Common"
     mc:Ignorable="d"
     DataContext="{Binding Editor, Source={StaticResource Locator}}">
 
     <Page.Resources>
+        <common:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
         <Style x:Key="AppBarLikeButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -170,24 +173,6 @@
             </CommandBar.Content>
 
             <CommandBar.PrimaryCommands>
-                <AppBarButton Label="New" Command="{Binding NewCommand}">
-                    <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Add"/>
-                    </AppBarButton.Icon>
-                </AppBarButton>
-
-                <AppBarButton Label="Open" Command="{Binding OpenCommand}">
-                    <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Folder"/>
-                    </AppBarButton.Icon>
-                </AppBarButton>
-
-                <AppBarButton Label="Save" Command="{Binding SaveCommand}">
-                    <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Save"/>
-                    </AppBarButton.Icon>
-                </AppBarButton>
-
                 <AppBarButton Label="Undo" Click="UndoButton_Click">
                     <AppBarButton.Icon>
                         <SymbolIcon Symbol="Undo"/>
@@ -213,15 +198,33 @@
                     </AppBarButton.Flyout>
                 </AppBarButton>
 
-                <AppBarSeparator />
-
                 <AppBarButton Label="Mode" Command="{Binding ToggleViewModeCommand}">
                     <AppBarButton.Icon>
                         <SymbolIcon Symbol="Refresh"/>
                     </AppBarButton.Icon>
                 </AppBarButton>
-
             </CommandBar.PrimaryCommands>
+
+            <CommandBar.SecondaryCommands>
+                <AppBarButton Label="New" Command="{Binding NewCommand}">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="Add"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
+
+                <AppBarButton Label="Open" Command="{Binding OpenCommand}">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="Folder"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
+
+                <AppBarButton Label="Save" Command="{Binding SaveCommand}">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="Save"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
+
+            </CommandBar.SecondaryCommands>
         </CommandBar>
     </Page.BottomAppBar>
 
@@ -230,6 +233,16 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
+
+        <ProgressBar x:Name="SavingProgressBar"
+                     Height="4"
+                     Grid.RowSpan="2"
+                     HorizontalAlignment="Stretch"
+                     VerticalAlignment="Top"
+                     IsIndeterminate="True"
+                     IsHitTestVisible="False"
+                     Canvas.ZIndex="99"
+                     Visibility="{Binding IsSaving, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
         <Border Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                 BorderBrush="{ThemeResource ApplicationForegroundThemeBrush}"

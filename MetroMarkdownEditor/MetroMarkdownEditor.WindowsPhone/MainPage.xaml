@@ -6,9 +6,113 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    DataContext="{Binding Main, Source={StaticResource Locator}}"> <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#2D2D30" />
+                    <SolidColorBrush x:Key="TilePathTextBrush" Color="#999999" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#E6E6E6" />
+                    <SolidColorBrush x:Key="TilePathTextBrush" Color="#666666" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Page.Resources>
 
     <Grid>
+        <Pivot Title="METRO MARKDOWN EDITOR">
+            <PivotItem Header="home">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
+                    <StackPanel Margin="19,12,19,0">
+                        <TextBlock Text="A clean markdown editor for Windows."
+                                   Margin="0,0,0,12"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Opacity="0.6" 
+                                   FontSize="14"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" Margin="19,0,19,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        
+                        <Button Content="New"
+                                Grid.Column="0"
+                                HorizontalAlignment="Stretch"
+                                Height="56"
+                                Command="{Binding NewCommand}"
+                                Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                FontSize="18" 
+                                Margin="0,0,6,0"/>
+                        
+                        <Button Content="Open"
+                                Grid.Column="1"
+                                HorizontalAlignment="Stretch"
+                                Height="56"
+                                Command="{Binding OpenCommand}"
+                                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                                Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                FontSize="18"
+                                Margin="6,0,0,0" />
+                    </Grid>
+
+                    <Grid Grid.Row="2" Margin="19,0,19,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <TextBlock Text="Recent files"
+                                   Margin="0,0,0,12"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   FontSize="18" />
+
+                        <ListView Grid.Row="1"
+                                  ItemsSource="{Binding RecentFiles}"
+                                  IsItemClickEnabled="True"
+                                  SelectionMode="None"
+                                  ItemClick="RecentFiles_ItemClick">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,12">
+                                         <TextBlock Text="{Binding Name}"
+                                                   FontSize="20"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}" />
+                                         <TextBlock Text="{Binding Path}"
+                                                   FontSize="12"
+                                                   Foreground="{ThemeResource TilePathTextBrush}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Grid>
+            </PivotItem>
+
+            <PivotItem Header="settings">
+                <StackPanel Margin="19,12,19,0">
+                    <ToggleSwitch Header="Auto Save" 
+                                  IsOn="{Binding AutoSaveEnabled, Mode=TwoWay}" />
+                    <TextBlock Text="Automatically save changes when switching files or exiting."
+                               Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                               Opacity="0.6"
+                               FontSize="14"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </PivotItem>
+        </Pivot>
     </Grid>
 </Page>

@@ -15,6 +15,7 @@ using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
 using Windows.UI.Xaml.Input;
+using Windows.Phone.UI.Input; // 必须引用，用于处理物理后退键
 
 namespace MetroMarkdownEditor.WindowsPhone
 {
@@ -44,16 +45,38 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         public EditorPage()
         {
-            InitializeComponent();
+            this.InitializeComponent();
+
             _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
             _typingTimer.Tick += TypingTimer_Tick;
+
             _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _undoTimer.Tick += UndoTimer_Tick;
+
             _autoSave.SettingsChanged += OnAutoSaveSettingsChanged;
             _autoSaveTimer = new DispatcherTimer();
             _autoSaveTimer.Tick += AutoSaveTimer_Tick;
+
             PreviewWebView.NavigationCompleted += PreviewWebView_NavigationCompleted;
+            
+            // 放在最后执行，确保安全
             ApplyEditorStyle();
+            
+            // 注册硬件后退键 (WP8.1 必需)
+            HardwareButtons.BackPressed += HardwareButtons_BackPressed;
+        }
+
+        // 处理物理后退键
+        private void HardwareButtons_BackPressed(object sender, BackPressedEventArgs e)
+        {
+            // 如果已经处理过（比如弹窗关闭），则跳过
+            if (e.Handled) return;
+
+            if (Frame.CanGoBack)
+            {
+                e.Handled = true;
+                Frame.GoBack();
+            }
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -64,19 +87,22 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (locator != null)
             {
                 _themeViewModel = locator.Theme;
-                _themeViewModel.PropertyChanged += OnThemeViewModelPropertyChanged;
+                if (_themeViewModel != null)
+                {
+                    _themeViewModel.PropertyChanged += OnThemeViewModelPropertyChanged;
+                }
             }
 
             if (ViewModel != null)
             {
-                // 鍏堣В缁戯紝闃叉澶氭杩涘叆椤甸潰閲嶅缁戝畾瀵艰嚧鍐呭瓨娉勬紡鎴栧娆¤Е鍙?                ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+                // 先解绑，防止重复绑定导致内存泄漏或多次触发
+                ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
                 ViewModel.PropertyChanged += OnViewModelPropertyChanged;
-            }
 
-            var request = e.Parameter as EditorNavigationRequest;
-            if (ViewModel != null)
-            {
-                // 1. 鏍规嵁涓嶅悓妯″紡鍒濆鍖栨暟鎹?                if (request != null)
+                var request = e.Parameter as EditorNavigationRequest;
+                
+                // 1. 根据不同模式初始化数据
+                if (request != null)
                 {
                     switch (request.Mode)
                     {
@@ -92,45 +118,29 @@ namespace MetroMarkdownEditor.WindowsPhone
                     }
                 }
 
-                // 2. 鍏滃簳锛氬鏋滄病鏈夋墦寮€鐨勬枃妗ｏ紝灏卞垵濮嬪寲涓€涓柊鐨?                if (!ViewModel.OpenDocuments.Any())
+                // 2. 兜底：如果没有打开的文档，就初始化一个新的
+                if (!ViewModel.OpenDocuments.Any())
                 {
                     await ViewModel.InitializeAsync();
                 }
 
-                // 3. 鍚屾鏂囧瓧鍐呭鍒扮紪杈戝櫒
+                // 3. 同步文字内容到编辑器
                 SyncEditorText();
                 ResetUndoRedo();
             }
 
-            // 4. 娓叉煋棰勮
+            // 4. 渲染预览
             await RenderPreviewAsync();
 
-            // 5. 銆愭渶鍚庝竴閬撻槻绾裤€戝己鍒跺簲鐢ㄥぇ瀛椾綋鏍煎紡
-            // 鏀惧湪鏈€鍚庢墽琛岋紝纭繚瑕嗙洊鎺変箣鍓嶆墍鏈夋搷浣滃彲鑳藉甫鏉ョ殑閲嶇疆
+            // 5. 【最后一道防线】强制应用大字体格式
             ApplyEditorFormatting();
-        }
-
-        // METHOD: Force apply font styling to the RichEditBox Document.
-        // ISSUE: RichEditBox often ignores XAML FontSize/FontFamily properties after text is loaded.
-        // LOGIC:
-        // 1. Get the 'ITextCharacterFormat' from 'EditorBox.Document.GetDefaultCharacterFormat()'.
-        // 2. Set the 'Name' to "Consolas".
-        // 3. Set the 'Size' to 22 (Note: RichEditBox uses Points, not Pixels, so this value needs to be explicitly set).
-        // 4. Apply the format back using 'EditorBox.Document.SetDefaultCharacterFormat(format)'.
-        // 5. Also apply this format to the current selection ('EditorBox.Document.Selection.CharacterFormat = format') to update existing text immediately.
-        private void ApplyEditorFormatting()
-        {
-            if (EditorBox == null || EditorBox.Document == null) return;
-
-            var format = EditorBox.Document.GetDefaultCharacterFormat();
-            format.Name = "Consolas";
-            format.Size = 16; // Set to 21 points for better readability on Windows Phone
-            EditorBox.Document.SetDefaultCharacterFormat(format);
-            EditorBox.Document.Selection.CharacterFormat = format;
         }
 
         protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
+            // 移除硬件后退键监听，防止内存泄漏和页面逻辑冲突
+            HardwareButtons.BackPressed -= HardwareButtons_BackPressed;
+
             if (_themeViewModel != null)
             {
                 _themeViewModel.PropertyChanged -= OnThemeViewModelPropertyChanged;
@@ -142,8 +152,27 @@ namespace MetroMarkdownEditor.WindowsPhone
             }
             _autoSave.SettingsChanged -= OnAutoSaveSettingsChanged;
             _autoSaveTimer.Stop();
+            _typingTimer.Stop();
+            _undoTimer.Stop();
 
             base.OnNavigatedFrom(e);
+        }
+
+        // 强制应用字体样式
+        private void ApplyEditorFormatting()
+        {
+            if (EditorBox == null || EditorBox.Document == null) return;
+
+            try 
+            {
+                // 使用 try-catch 防止控件未准备好时访问属性崩溃
+                var format = EditorBox.Document.GetDefaultCharacterFormat();
+                format.Name = "Consolas";
+                format.Size = 16; // Windows Phone 上 16pt 比较合适
+                EditorBox.Document.SetDefaultCharacterFormat(format);
+                EditorBox.Document.Selection.CharacterFormat = format;
+            }
+            catch { /* 忽略格式设置错误，不影响核心功能 */ }
         }
 
         private void OnThemeViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -155,7 +184,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             });
         }
 
-        private void EditorBox_KeyDown(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        private void EditorBox_KeyDown(object sender, KeyRoutedEventArgs e)
         {
             var ctrlState = Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(Windows.System.VirtualKey.Control);
             bool isCtrlPressed = (ctrlState & Windows.UI.Core.CoreVirtualKeyStates.Down) == Windows.UI.Core.CoreVirtualKeyStates.Down;
@@ -189,119 +218,91 @@ namespace MetroMarkdownEditor.WindowsPhone
 
                 if (isShiftPressed)
                 {
-                    // === Shift + Tab: 鍙嶅悜缂╄繘 ===
-                    var doc = EditorBox.Document;
-                    if (doc != null)
-                    {
-                        string fullText = string.Empty;
-                        doc.GetText(Windows.UI.Text.TextGetOptions.None, out fullText);
-
-                        var selection = doc.Selection;
-                        int selStart = selection.StartPosition;
-                        int selEnd = selection.EndPosition;
-                        
-                        // 纭繚 Start <= End
-                        if (selStart > selEnd) { var t = selStart; selStart = selEnd; selEnd = t; }
-
-                        // 1. 鍚戝墠瀵绘壘褰撳墠琛岀殑璧风偣
-                        int lineStart = selStart;
-                        while (lineStart > 0 && fullText[lineStart - 1] != '\r')
-                        {
-                            lineStart--;
-                        }
-
-                        // 2. 鍚戝悗瀵绘壘褰撳墠(鎴栨渶鍚庨€変腑)琛岀殑缁堢偣
-                        // 銆愪慨澶嶃€戜笉瑕佸寘鍚渶鍚庣殑 \r锛屽彧璇诲埌 \r 涔嬪墠鍗冲彲
-                        int lineEnd = selEnd;
-                        while (lineEnd < fullText.Length && fullText[lineEnd] != '\r')
-                        {
-                            lineEnd++;
-                        }
-                        
-                        // 銆愬凡鍒犻櫎銆戝紩璧?Bug 鐨勪唬鐮侊細 lineEnd++ 
-                        // 鎴戜滑涓嶉渶瑕佹妸鏈€鍚庝竴琛岀殑鎹㈣绗︿篃鍗疯繘鏉ュ鐞嗭紝鐣欑潃瀹冨湪鍘熷湴灏辫銆?
-                        // 3. 鎴彇闇€瑕佸鐞嗙殑鏂囨湰鍧?                        if (lineEnd <= lineStart) return; // 鍙湁绌鸿鎴栧紓甯告儏鍐碉紝鐩存帴杩斿洖
-                        string segment = fullText.Substring(lineStart, lineEnd - lineStart);
-                        
-                        // 4. 鎸夎鎷嗗垎 (鐜板湪 segment 涓嶅寘鍚湯灏剧殑 \r锛孲plit 缁撴灉浼氬緢骞插噣)
-                        var lines = segment.Split('\r'); 
-
-                        var sb = new StringBuilder();
-                        int offsetToSelStart = selStart - lineStart;
-                        int offsetToSelEnd = selEnd - lineStart;
-                        int cumulativeRemoved = 0;
-                        int removedBeforeSelStart = 0;
-                        int removedBeforeSelEnd = 0;
-                        int cursor = 0;
-
-                        for (int i = 0; i < lines.Length; i++)
-                        {
-                            string line = lines[i];
-                            int removed = 0;
-
-                            if (!string.IsNullOrEmpty(line))
-                            {
-                                // 閫昏緫锛氬鏋滄槸 Tab 寮€澶达紝鍒?1 涓紱濡傛灉鏄┖鏍硷紝鏈€澶氬垹 4 涓?                                
-                                if (line[0] == '\t')
-                                {
-                                    removed = 1;
-                                    line = line.Substring(1);
-                                }
-                                else
-                                {
-                                    int spaceCount = 0;
-                                    while (spaceCount < line.Length && spaceCount < 4 && line[spaceCount] == ' ')
-                                    {
-                                        spaceCount++;
-                                    }
-                                    if (spaceCount > 0)
-                                    {
-                                        removed = spaceCount;
-                                        line = line.Substring(removed);
-                                    }
-                                }
-                            }
-
-                            int originalLength = lines[i].Length; 
-                            // 杩欓噷涓嶉渶瑕佸啀鍒ゆ柇 TrailingBreak 浜嗭紝鍥犱负鎴戜滑娌″寘鍚湯灏炬崲琛岀锛?                            // 鍙湁涓棿鐨勬崲琛岀锛坙ines 鏁扮粍涔嬮棿鐨勶級闇€瑕佽ˉ鍥?\r
-                            bool isIntermediateLine = (i < lines.Length - 1);
-
-                            // 璁＄畻閫夊尯鍋忕Щ閲忕殑鍙樺寲
-                            if (offsetToSelStart >= cursor && offsetToSelStart <= cursor + originalLength + (isIntermediateLine?1:0))
-                                removedBeforeSelStart = cumulativeRemoved + (offsetToSelStart > cursor ? removed : 0); // 绮楃暐淇
-                            
-                            // 鏇寸簿鍑嗙殑鍏夋爣璺熼殢閫昏緫鏈夌偣澶嶆潅锛岃繖閲屼娇鐢ㄧ畝鍖栫増锛?                            // 濡傛灉鏀瑰姩鍙戠敓鍦ㄥ厜鏍囧乏杈癸紝鍏夋爣灏卞乏绉?                            if (cursor < offsetToSelStart) removedBeforeSelStart += removed;
-                            if (cursor < offsetToSelEnd) removedBeforeSelEnd += removed;
-
-                            sb.Append(line);
-                            if (isIntermediateLine)
-                            {
-                                sb.Append('\r'); // 琛ュ洖涓棿琚?Split 鎷挎帀鐨勬崲琛岀
-                            }
-
-                            cumulativeRemoved += removed;
-                            cursor += originalLength + 1; // +1 鏄负浜嗛€昏緫璁℃暟锛屽疄闄呬笉褰卞搷 sb
-                        }
-
-                        // 5. 鏇挎崲鏂囨湰
-                        var range = doc.GetRange(lineStart, lineEnd);
-                        range.SetText(Windows.UI.Text.TextSetOptions.None, sb.ToString());
-
-                        // 6. 鎭㈠閫夊尯 (淇浣嶇疆)
-                        // 杩欓噷鐨勮绠楃◢寰湁鐐?tricky锛岀畝鍗曞仛娉曟槸鐩存帴鍑忓幓绱鍒犻櫎閲忥紝
-                        // 浣嗕负浜嗕弗璋紝鏈€濂介噸鏂拌绠?                        int newSelStart = Math.Max(lineStart, selStart - removedBeforeSelEnd); // 绠€鍖栧鐞嗭紝闃叉瓒婄晫
-                        // 瀹為檯寤鸿锛氱洿鎺ュ叏閫夊鐞嗗悗鐨勫潡锛屾垨鑰呯畝鍗曠殑淇濇寔 Start 浣嶇疆
-                        doc.Selection.SetRange(Math.Max(lineStart, selStart - cumulativeRemoved), Math.Max(lineStart, selEnd - cumulativeRemoved));
-                        
-                        // 涓婇潰鍏夋爣璁＄畻澶鏉傚鏄撻敊锛屾渶绋冲Ε鐨勭畝鍗曞洖閫€锛?                        // 淇濇寔閫変腑杩欏嚑琛?                        // doc.Selection.SetRange(lineStart, lineStart + sb.Length);
-                    }
+                    HandleShiftTab(); // 提取 Shift+Tab 逻辑以保持代码整洁
                 }
                 else
                 {
-                    // 鏅€?Tab
+                    // 普通 Tab
                     EditorBox.Document.Selection.TypeText("\t");
                 }
             }
+        }
+
+        // 提取出来的 Shift+Tab 逻辑
+        private void HandleShiftTab()
+        {
+            var doc = EditorBox.Document;
+            if (doc == null) return;
+
+            string fullText = string.Empty;
+            doc.GetText(TextGetOptions.None, out fullText);
+
+            var selection = doc.Selection;
+            int selStart = selection.StartPosition;
+            int selEnd = selection.EndPosition;
+
+            if (selStart > selEnd) { var t = selStart; selStart = selEnd; selEnd = t; }
+
+            int lineStart = selStart;
+            while (lineStart > 0 && fullText[lineStart - 1] != '\r')
+            {
+                lineStart--;
+            }
+
+            int lineEnd = selEnd;
+            while (lineEnd < fullText.Length && fullText[lineEnd] != '\r')
+            {
+                lineEnd++;
+            }
+
+            if (lineEnd <= lineStart) return;
+            string segment = fullText.Substring(lineStart, lineEnd - lineStart);
+            var lines = segment.Split('\r');
+
+            var sb = new StringBuilder();
+            int cumulativeRemoved = 0;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                int removed = 0;
+
+                if (!string.IsNullOrEmpty(line))
+                {
+                    if (line[0] == '\t')
+                    {
+                        removed = 1;
+                        line = line.Substring(1);
+                    }
+                    else
+                    {
+                        int spaceCount = 0;
+                        while (spaceCount < line.Length && spaceCount < 4 && line[spaceCount] == ' ')
+                        {
+                            spaceCount++;
+                        }
+                        if (spaceCount > 0)
+                        {
+                            removed = spaceCount;
+                            line = line.Substring(removed);
+                        }
+                    }
+                }
+
+                bool isIntermediateLine = (i < lines.Length - 1);
+                sb.Append(line);
+                if (isIntermediateLine)
+                {
+                    sb.Append('\r');
+                }
+                cumulativeRemoved += removed;
+            }
+
+            var range = doc.GetRange(lineStart, lineEnd);
+            range.SetText(TextSetOptions.None, sb.ToString());
+
+            // 简单恢复选区
+            doc.Selection.SetRange(Math.Max(lineStart, selStart - cumulativeRemoved), Math.Max(lineStart, selEnd - cumulativeRemoved));
         }
 
         private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -344,14 +345,14 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            var frame = Frame;
-            if (frame != null && frame.CanGoBack)
+            if (Frame != null && Frame.CanGoBack)
             {
-                frame.GoBack();
+                Frame.GoBack();
             }
-            else if (frame != null)
+            else if (Frame != null)
             {
-                frame.Navigate(typeof(MainPage));
+                // 如果不能回退，导航回主页 (根据你项目实际情况修改)
+                // Frame.Navigate(typeof(MainPage)); 
             }
         }
 
@@ -359,6 +360,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             if (_isUndoRedoLocked) return;
             if (ViewModel == null || ViewModel.ActiveDocument == null) return;
+            if (EditorBox == null || EditorBox.Document == null) return;
 
             string text = string.Empty;
             EditorBox.Document.GetText(TextGetOptions.None, out text);
@@ -407,7 +409,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private void TypingTimer_Tick(object sender, object e)
         {
             _typingTimer.Stop();
-
+            // 注意：FindScrollViewer 可能会比较耗性能，放在 Timer 结束时做是正确的
             var scroll = FindScrollViewer(EditorBox);
             double? vertical = scroll != null ? (double?)scroll.VerticalOffset : null;
 
@@ -438,7 +440,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (ViewModel.ActiveDocument.File == null) return;
             if (!ViewModel.ActiveDocument.IsDirty) return;
 
-            await ViewModel.SaveAsync();
+            await ViewModel.AutoSaveAsync();
         }
 
         private TextChangeInfo AnalyzeChange(string previous, string current)
@@ -511,10 +513,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private MarkdownBlock FindBlockForLine(int lineIndex)
         {
-            if (_lastBlocks == null)
-            {
-                return null;
-            }
+            if (_lastBlocks == null) return null;
 
             foreach (var block in _lastBlocks)
             {
@@ -523,30 +522,20 @@ namespace MetroMarkdownEditor.WindowsPhone
                     return block;
                 }
             }
-
             return null;
         }
 
         private MarkdownBlock BuildUpdatedBlock(MarkdownBlock template, string markdown)
         {
-            if (template == null)
-            {
-                return null;
-            }
+            if (template == null) return null;
 
             var lines = SplitLines(markdown);
-            if (lines.Length == 0)
-            {
-                return null;
-            }
+            if (lines.Length == 0) return null;
 
             var sb = new StringBuilder();
             var start = Math.Max(0, template.StartLine);
             var end = Math.Min(lines.Length - 1, template.EndLine);
-            if (start > end)
-            {
-                return null;
-            }
+            if (start > end) return null;
 
             for (int i = start; i <= end; i++)
             {
@@ -564,10 +553,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private void UpdateLocalBlockCache(MarkdownBlock updated)
         {
-            if (_lastBlocks == null || updated == null)
-            {
-                return;
-            }
+            if (_lastBlocks == null || updated == null) return;
 
             var list = new List<MarkdownBlock>(_lastBlocks);
             if (updated.Index >= 0 && updated.Index < list.Count)
@@ -585,8 +571,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private ScrollViewer FindScrollViewer(DependencyObject root)
         {
             if (root == null) return null;
-            var viewer = root as ScrollViewer;
-            if (viewer != null) return viewer;
+            if (root is ScrollViewer) return root as ScrollViewer;
 
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
             {
@@ -594,7 +579,6 @@ namespace MetroMarkdownEditor.WindowsPhone
                 var result = FindScrollViewer(child);
                 if (result != null) return result;
             }
-
             return null;
         }
 
@@ -725,17 +709,8 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 doc.BatchDisplayUpdates();
 
-                bool isDark = false;
-                var rootFrame = Window.Current.Content as FrameworkElement;
-
-                if (rootFrame != null)
-                {
-                    isDark = rootFrame.RequestedTheme == ElementTheme.Dark;
-                }
-                else
-                {
-                    isDark = Application.Current.RequestedTheme == ApplicationTheme.Dark;
-                }
+                // 使用安全的方式获取主题
+                bool isDark = GetCurrentTheme() == ElementTheme.Dark;
 
                 Color bodyColor;
                 Color syntaxColor;
@@ -759,6 +734,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
                 RegexOptions options = RegexOptions.Multiline;
 
+                // 标题 #
                 MatchCollection headers = Regex.Matches(text, @"(?:^|\r)(#{1,6})(?=\s)", options);
                 foreach (Match m in headers)
                 {
@@ -767,19 +743,23 @@ namespace MetroMarkdownEditor.WindowsPhone
                     range.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
+                // 链接 [text](url)
                 MatchCollection links = Regex.Matches(text, @"(!?\[)(.*?)(\])(\(.*?\))", options);
                 foreach (Match m in links)
                 {
-                    ITextRange r1 = doc.GetRange(m.Groups[1].Index, m.Groups[1].Index + m.Groups[1].Length);
-                    r1.CharacterFormat.ForegroundColor = syntaxColor;
-
-                    ITextRange r3 = doc.GetRange(m.Groups[3].Index, m.Groups[3].Index + m.Groups[3].Length);
-                    r3.CharacterFormat.ForegroundColor = syntaxColor;
-
-                    ITextRange r4 = doc.GetRange(m.Groups[4].Index, m.Groups[4].Index + m.Groups[4].Length);
-                    r4.CharacterFormat.ForegroundColor = syntaxColor;
+                    // 仅高亮符号部分
+                    foreach (int groupIdx in new[] { 1, 3, 4 })
+                    {
+                        var g = m.Groups[groupIdx];
+                        if (g.Success) 
+                        {
+                            ITextRange r = doc.GetRange(g.Index, g.Index + g.Length);
+                            r.CharacterFormat.ForegroundColor = syntaxColor;
+                        }
+                    }
                 }
 
+                // 粗体/斜体
                 MatchCollection styles = Regex.Matches(text, @"(\*\*|__|\*|_|~~)(.+?)\1", options);
                 foreach (Match m in styles)
                 {
@@ -792,6 +772,7 @@ namespace MetroMarkdownEditor.WindowsPhone
                     rRight.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
+                // 引用 >
                 MatchCollection quotes = Regex.Matches(text, @"(?:^|\r)(>\s)", options);
                 foreach (Match m in quotes)
                 {
@@ -800,6 +781,7 @@ namespace MetroMarkdownEditor.WindowsPhone
                     range.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
+                // 分割线 ---
                 MatchCollection hrs = Regex.Matches(text, @"(?:^|\r)(\-\-\-|\*\*\*)$", options);
                 foreach (Match m in hrs)
                 {
@@ -808,11 +790,13 @@ namespace MetroMarkdownEditor.WindowsPhone
                     range.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
+                // 恢复光标位置和颜色
                 doc.Selection.SetRange(start, end);
                 doc.Selection.CharacterFormat.ForegroundColor = bodyColor;
             }
             catch
             {
+                // 忽略高亮过程中的任何错误，不影响使用
             }
             finally
             {
@@ -832,10 +816,12 @@ namespace MetroMarkdownEditor.WindowsPhone
                 ResetUndoRedo();
             }
         }
+
+        // 导出菜单点击
         private async void ExportMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            var item = sender as MenuFlyoutItem;
-            if (item == null) return;
+            var item = sender as AppBarButton;
+            if (item == null) return; 
 
             var format = item.Tag != null ? item.Tag.ToString() : null;
             if (ViewModel != null)
@@ -844,20 +830,36 @@ namespace MetroMarkdownEditor.WindowsPhone
             }
         }
 
+        // 自动保存设置点击
         private void AutoSaveSettings_Click(object sender, RoutedEventArgs e)
         {
-            var flyout = new AutoSaveSettings();
-            flyout.DataContext = AutoSaveService.Instance;
-            flyout.ShowIndependent();
+            try
+            {
+                var flyout = new AutoSaveSettings();
+                flyout.DataContext = AutoSaveService.Instance;
+                // 如果是 WinRT Flyout, 可能需要用 ShowAt 或者自定义扩展方法
+                // 这里假设 ShowIndependent 是你的扩展方法或 Callisto 库的方法
+                flyout.ShowIndependent(); 
+            }
+            catch 
+            {
+                // 如果设置页打开失败，忽略
+            }
         }
 
         private void ApplyEditorStyle()
         {
             if (EditorBox == null) return;
-
-            var format = EditorBox.Document.GetDefaultParagraphFormat();
-            format.SetLineSpacing(LineSpacingRule.Multiple, 1.5f);
-            EditorBox.Document.SetDefaultParagraphFormat(format);
+            try
+            {
+                if (EditorBox.Document != null)
+                {
+                    var format = EditorBox.Document.GetDefaultParagraphFormat();
+                    format.SetLineSpacing(LineSpacingRule.Multiple, 1.5f);
+                    EditorBox.Document.SetDefaultParagraphFormat(format);
+                }
+            }
+            catch { }
         }
 
         private async void PreviewWebView_NavigationCompleted(object sender, WebViewNavigationCompletedEventArgs e)
@@ -888,8 +890,12 @@ namespace MetroMarkdownEditor.WindowsPhone
             var content = await FileIO.ReadTextAsync(file);
 
             _lastEditorText = (content ?? string.Empty).Replace("\r\n", "\n");
-            EditorBox.Document.SetText(TextSetOptions.None, content ?? string.Empty);
-            HighlightMarkdownSyntax();
+            if (EditorBox != null && EditorBox.Document != null)
+            {
+                EditorBox.Document.SetText(TextSetOptions.None, content ?? string.Empty);
+                HighlightMarkdownSyntax();
+            }
+            
             ResetUndoRedo();
 
             if (ViewModel != null)
@@ -921,6 +927,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private string BuildPhoneCss()
         {
             var baseCss = ViewModel != null ? ViewModel.PreviewCss : string.Empty;
+            // 针对手机优化字体大小
             var phoneScale = "<style>body{font-size:14px;line-height:1.6;} pre{font-size:12px;} pre code, code{font-size:12px;}</style>";
             return (baseCss ?? string.Empty) + phoneScale;
         }

@@ -29,6 +29,8 @@ namespace MetroMarkdownEditor.ViewModels
         private string _previewContent;
         private string _previewCss;
         private IReadOnlyList<MarkdownBlock> _previewBlocks = new List<MarkdownBlock>();
+        private bool _isSaving;
+        private string _exportContent; // For WP8.1 continuation
 
         public EditorViewModel(ThemeService themeService, RecentFileService recentFiles)
         {
@@ -140,6 +142,19 @@ namespace MetroMarkdownEditor.ViewModels
             }
         }
 
+        public bool IsSaving
+        {
+            get { return _isSaving; }
+            private set
+            {
+                if (_isSaving != value)
+                {
+                    _isSaving = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         public void SetTheme(ElementTheme theme)
         {
             _currentTheme = theme;
@@ -219,36 +234,64 @@ namespace MetroMarkdownEditor.ViewModels
                 return;
             }
 
-            if (ActiveDocument.File == null)
+            IsSaving = true;
+            try
             {
-                var savePicker = new FileSavePicker
+                if (ActiveDocument.File == null)
                 {
-                    SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-                    SuggestedFileName = ActiveDocument.Title
-                };
-                savePicker.FileTypeChoices.Add("Markdown", new[] { ".md", ".markdown" });
-                savePicker.FileTypeChoices.Add("Text", new[] { ".txt" });
+                    var savePicker = new FileSavePicker
+                    {
+                        SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+                        SuggestedFileName = ActiveDocument.Title
+                    };
+                    savePicker.FileTypeChoices.Add("Markdown", new[] { ".md", ".markdown" });
+                    savePicker.FileTypeChoices.Add("Text", new[] { ".txt" });
 #if WINDOWS_PHONE_APP
-                savePicker.PickSaveFileAndContinue();
-                await Task.FromResult<object>(null);
-                return;
-#else
-                var target = await savePicker.PickSaveFileAsync();
-                if (target == null)
-                {
+                    savePicker.PickSaveFileAndContinue();
+                    await Task.FromResult<object>(null);
                     return;
-                }
+#else
+                    var target = await savePicker.PickSaveFileAsync();
+                    if (target == null)
+                    {
+                        return;
+                    }
 
-                await ActiveDocument.SaveAsync(target);
-                var recentItem = await _recentFiles.TouchAsync(target);
-                ActiveDocument.Token = recentItem != null ? recentItem.Token : null;
+                    await ActiveDocument.SaveAsync(target);
+                    var recentItem = await _recentFiles.TouchAsync(target);
+                    ActiveDocument.Token = recentItem != null ? recentItem.Token : null;
 #endif
+                }
+                else
+                {
+                    await ActiveDocument.SaveAsync();
+                    var recentItem = await _recentFiles.TouchAsync(ActiveDocument.File);
+                    ActiveDocument.Token = recentItem != null ? recentItem.Token : ActiveDocument.Token;
+                }
             }
-            else
+            finally
+            {
+                IsSaving = false;
+            }
+        }
+
+        public async Task AutoSaveAsync()
+        {
+            if (ActiveDocument == null || ActiveDocument.File == null || !ActiveDocument.IsDirty)
+            {
+                return;
+            }
+
+            IsSaving = true;
+            try
             {
                 await ActiveDocument.SaveAsync();
                 var recentItem = await _recentFiles.TouchAsync(ActiveDocument.File);
                 ActiveDocument.Token = recentItem != null ? recentItem.Token : ActiveDocument.Token;
+            }
+            finally
+            {
+                IsSaving = false;
             }
         }
 
@@ -437,30 +480,24 @@ namespace MetroMarkdownEditor.ViewModels
                 SuggestedFileName = ActiveDocument.Title
             };
 
+            string fileType;
             if (string.Equals(format, "html", StringComparison.OrdinalIgnoreCase))
             {
-                picker.FileTypeChoices.Add("HTML", new[] { ".html" });
+                fileType = "HTML";
+                picker.FileTypeChoices.Add(fileType, new[] { ".html" });
             }
             else if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
             {
-                picker.FileTypeChoices.Add("PDF", new[] { ".pdf" });
+                fileType = "PDF";
+                picker.FileTypeChoices.Add(fileType, new[] { ".pdf" });
             }
             else
             {
-                picker.FileTypeChoices.Add("Markdown", new[] { ".md", ".markdown" });
+                fileType = "Markdown";
+                picker.FileTypeChoices.Add(fileType, new[] { ".md", ".markdown" });
             }
 
-#if WINDOWS_PHONE_APP
-            picker.PickSaveFileAndContinue();
-            await Task.FromResult<object>(null);
-            return;
-#else
-            var target = await picker.PickSaveFileAsync();
-            if (target == null)
-            {
-                return;
-            }
-
+            // Prepare content before calling picker, for both platforms
             string contentToSave;
             if (string.Equals(format, "html", StringComparison.OrdinalIgnoreCase) || string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
             {
@@ -470,6 +507,14 @@ namespace MetroMarkdownEditor.ViewModels
             {
                 contentToSave = ActiveDocument.Content ?? string.Empty;
             }
+
+#if WINDOWS_PHONE_APP
+            _exportContent = contentToSave;
+            picker.PickSaveFileAndContinue();
+            await Task.FromResult<object>(null);
+#else
+            var target = await picker.PickSaveFileAsync();
+            if (target == null) return;
 
             await FileIO.WriteTextAsync(target, contentToSave);
             var recentItem = await _recentFiles.TouchAsync(target);
@@ -559,10 +604,26 @@ namespace MetroMarkdownEditor.ViewModels
         {
             if (args == null || args.File == null)
             {
+                _exportContent = null; // Also clear on cancellation
                 return;
             }
 
-            await ActiveDocument.SaveAsync(args.File);
+            // Use a local variable to capture the export content and reset the state field.
+            // This prevents race conditions or unexpected behavior on subsequent saves.
+            string contentForExport = _exportContent;
+            _exportContent = null;
+
+            if (contentForExport != null)
+            {
+                // This is an EXPORT continuation. Write the pre-generated content.
+                await FileIO.WriteTextAsync(args.File, contentForExport);
+            }
+            else
+            {
+                // This is a regular SAVE AS continuation.
+                await ActiveDocument.SaveAsync(args.File);
+            }
+            
             var recentItem = await _recentFiles.TouchAsync(args.File);
             ActiveDocument.Token = recentItem != null ? recentItem.Token : null;
         }
