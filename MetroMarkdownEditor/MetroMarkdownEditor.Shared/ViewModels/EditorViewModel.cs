@@ -30,6 +30,7 @@ namespace MetroMarkdownEditor.ViewModels
         private string _previewCss;
         private IReadOnlyList<MarkdownBlock> _previewBlocks = new List<MarkdownBlock>();
         private bool _isSaving;
+        private string _saveStatusText;
         private string _exportContent; // For WP8.1 continuation
 
         public EditorViewModel(ThemeService themeService, RecentFileService recentFiles)
@@ -155,6 +156,19 @@ namespace MetroMarkdownEditor.ViewModels
             }
         }
 
+        public string SaveStatusText
+        {
+            get { return _saveStatusText; }
+            private set
+            {
+                if (_saveStatusText != value)
+                {
+                    _saveStatusText = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
         public void SetTheme(ElementTheme theme)
         {
             _currentTheme = theme;
@@ -235,6 +249,10 @@ namespace MetroMarkdownEditor.ViewModels
             }
 
             IsSaving = true;
+            SaveStatusText = "Saving...";
+            var minDelay = Task.Delay(500); // 保证进度条至少显示 0.5 秒
+            bool saved = false;
+
             try
             {
                 if (ActiveDocument.File == null)
@@ -249,6 +267,8 @@ namespace MetroMarkdownEditor.ViewModels
 #if WINDOWS_PHONE_APP
                     savePicker.PickSaveFileAndContinue();
                     await Task.FromResult<object>(null);
+                    // WP8.1 挂起前直接返回，finally 会执行并重置 IsSaving，这是正确的
+                    // 真正的保存和成功提示会在 HandleSavePickerContinuation 中处理
                     return;
 #else
                     var target = await savePicker.PickSaveFileAsync();
@@ -260,6 +280,7 @@ namespace MetroMarkdownEditor.ViewModels
                     await ActiveDocument.SaveAsync(target);
                     var recentItem = await _recentFiles.TouchAsync(target);
                     ActiveDocument.Token = recentItem != null ? recentItem.Token : null;
+                    saved = true;
 #endif
                 }
                 else
@@ -267,11 +288,20 @@ namespace MetroMarkdownEditor.ViewModels
                     await ActiveDocument.SaveAsync();
                     var recentItem = await _recentFiles.TouchAsync(ActiveDocument.File);
                     ActiveDocument.Token = recentItem != null ? recentItem.Token : ActiveDocument.Token;
+                    saved = true;
+                }
+
+                if (saved)
+                {
+                    await minDelay; // 等待最小展示时间
+                    SaveStatusText = "Success";
+                    await Task.Delay(1000); // 显示 Success 文字 1 秒
                 }
             }
             finally
             {
                 IsSaving = false;
+                SaveStatusText = null;
             }
         }
 
@@ -608,6 +638,10 @@ namespace MetroMarkdownEditor.ViewModels
                 return;
             }
 
+            IsSaving = true;
+            SaveStatusText = "Saving...";
+            var minDelay = Task.Delay(500);
+
             // Use a local variable to capture the export content and reset the state field.
             // This prevents race conditions or unexpected behavior on subsequent saves.
             string contentForExport = _exportContent;
@@ -615,8 +649,13 @@ namespace MetroMarkdownEditor.ViewModels
 
             if (contentForExport != null)
             {
+                try 
+                {
                 // This is an EXPORT continuation. Write the pre-generated content.
                 await FileIO.WriteTextAsync(args.File, contentForExport);
+                }
+                finally { IsSaving = false; } // Export usually doesn't need the full success cycle or handled differently
+                return;
             }
             else
             {
@@ -626,6 +665,12 @@ namespace MetroMarkdownEditor.ViewModels
             
             var recentItem = await _recentFiles.TouchAsync(args.File);
             ActiveDocument.Token = recentItem != null ? recentItem.Token : null;
+
+            await minDelay;
+            SaveStatusText = "Success";
+            await Task.Delay(1000);
+            IsSaving = false;
+            SaveStatusText = null;
         }
 #endif
     }

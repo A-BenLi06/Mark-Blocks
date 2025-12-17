@@ -47,7 +47,6 @@
                     <ControlTemplate TargetType="ListViewItem">
                         <Grid Background="Transparent">
                             <VisualStateManager.VisualStateGroups>
-                                <!-- 1. 通用状态组 (鼠标交互) -->
                                 <VisualStateGroup x:Name="CommonStates">
                                     <VisualState x:Name="Normal" />
                                     <VisualState x:Name="PointerOver" />
@@ -55,11 +54,9 @@
                                     <VisualState x:Name="Disabled" />
                                 </VisualStateGroup>
 
-                                <!-- 2. 选中状态组 (核心高亮逻辑) -->
                                 <VisualStateGroup x:Name="SelectionStates">
                                     <VisualState x:Name="Unselected" />
-                                    
-                                    <!-- 选中 (有焦�? -->
+
                                     <VisualState x:Name="Selected">
                                         <Storyboard>
                                             <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
@@ -79,8 +76,6 @@
                                         </Storyboard>
                                     </VisualState>
 
-                                    <!-- 选中 (无焦�?- 比如正在编辑文档�? -->
-                                    <!-- 必须加上这个状态，否则一点编辑框，红色就没了 -->
                                     <VisualState x:Name="SelectedUnfocused">
                                         <Storyboard>
                                             <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
@@ -100,7 +95,6 @@
                                         </Storyboard>
                                     </VisualState>
 
-                                    <!-- 选中且鼠标悬�?-->
                                     <VisualState x:Name="SelectedPointerOver">
                                         <Storyboard>
                                             <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
@@ -141,13 +135,12 @@
                                 </VisualStateGroup>
                             </VisualStateManager.VisualStateGroups>
 
-                            <!-- 颜色容器 -->
                             <ContentControl x:Name="ColorContainer"
                                             Foreground="#FF999999"
                                             FontWeight="Light"
                                             HorizontalContentAlignment="Stretch"
                                             VerticalContentAlignment="Center">
-                                
+
                                 <ContentPresenter x:Name="TabContent"
                                                   Content="{TemplateBinding Content}"
                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
@@ -234,15 +227,23 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ProgressBar x:Name="SavingProgressBar"
-                     Height="4"
-                     Grid.RowSpan="2"
-                     HorizontalAlignment="Stretch"
-                     VerticalAlignment="Top"
-                     IsIndeterminate="True"
-                     IsHitTestVisible="False"
-                     Canvas.ZIndex="99"
-                     Visibility="{Binding IsSaving, Converter={StaticResource BooleanToVisibilityConverter}}" />
+        <Grid Grid.RowSpan="2"
+              VerticalAlignment="Top"
+              Canvas.ZIndex="99"
+              IsHitTestVisible="False"
+              Visibility="{Binding IsSaving, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ProgressBar Height="4"
+                         IsIndeterminate="True"
+                         HorizontalAlignment="Stretch"
+                         VerticalAlignment="Top" />
+            <TextBlock Text="{Binding SaveStatusText}"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Top"
+                       Margin="0,8,20,0"/>
+        </Grid>
 
         <Border Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                 BorderBrush="{ThemeResource ApplicationForegroundThemeBrush}"
@@ -282,20 +283,18 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- 1. 标题：不设置 Foreground，让它自动继�?ItemContainerStyle 的颜�?-->
                                 <TextBlock x:Name="TitleText" 
                                            Grid.Column="0"
                                            Text="{Binding Title}"
                                            FontSize="20"
                                            VerticalAlignment="Center" />
 
-                                <!-- 2. 按钮：绑定到标题�?Foreground，并使用极简 Template 去除干扰 -->
                                 <Button Grid.Column="1"
                                         Width="28" Height="28"
                                         Margin="8,0,0,0"
                                         Command="{Binding DataContext.CloseDocumentCommand, ElementName=LayoutRoot}"
                                         CommandParameter="{Binding}">
-                                    
+
                                     <Button.Foreground>
                                         <Binding ElementName="TitleText" Path="Foreground" />
                                     </Button.Foreground>
@@ -307,7 +306,7 @@
                                             </Grid>
                                         </ControlTemplate>
                                     </Button.Template>
-                                    
+
                                     <TextBlock Text="&#xE106;" 
                                                FontFamily="Segoe UI Symbol" 
                                                FontSize="14" />
@@ -348,7 +347,6 @@
                                  TextChanged="EditorBox_TextChanged"
                                  KeyDown="EditorBox_KeyDown" />
 
-                    <!-- Safe hit area to call up app bar -->
                     <Border Grid.Row="1"
                             Background="Transparent"
                             Height="40"

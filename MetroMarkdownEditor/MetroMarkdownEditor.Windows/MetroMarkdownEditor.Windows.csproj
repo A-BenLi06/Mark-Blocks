@@ -19,6 +19,7 @@
     <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
     <AppxBundlePlatforms>x86|x64|arm</AppxBundlePlatforms>
     <AppxBundle>Never</AppxBundle>
+    <AppxPackageDir>C:\Users\ben_l\Documents\Coding\CMetro\MetroMarkdownEditor\MetroMarkdownEditor\MetroMarkdownEditor.Windows\AppPackages\2.1.0\</AppxPackageDir>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>

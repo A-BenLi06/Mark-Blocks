@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/2010/manifest" xmlns:m2="http://schemas.microsoft.com/appx/2013/manifest">
-  <Identity Name="24dc1f2e-ae8d-45d7-ac6e-4ba609c0d5d2" Publisher="CN=ben_l" Version="1.0.0.0" />
+  <Identity Name="24dc1f2e-ae8d-45d7-ac6e-4ba609c0d5d2" Publisher="CN=ben_l" Version="2.1.0.0" />
   <Properties>
     <DisplayName>MetroMarkdownEditor.Windows</DisplayName>
     <PublisherDisplayName>ben_l</PublisherDisplayName>

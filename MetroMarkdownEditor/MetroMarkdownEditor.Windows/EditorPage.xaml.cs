@@ -239,6 +239,17 @@ namespace MetroMarkdownEditor.Windows
             var ctrlState = global::Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(global::Windows.System.VirtualKey.Control);
             bool isCtrlPressed = (ctrlState & global::Windows.UI.Core.CoreVirtualKeyStates.Down) == global::Windows.UI.Core.CoreVirtualKeyStates.Down;
 
+            // 保存
+            if (isCtrlPressed && e.Key == global::Windows.System.VirtualKey.S)
+            {
+                e.Handled = true;
+                if (ViewModel != null)
+                {
+                    var _ = ViewModel.SaveAsync();
+                }
+                return;
+            }
+
             // 撤销
             if (isCtrlPressed && e.Key == global::Windows.System.VirtualKey.Z)
             {
@@ -708,7 +719,7 @@ namespace MetroMarkdownEditor.Windows
                 var displayInfo = global::Windows.Graphics.Display.DisplayInformation.GetForCurrentView();
                 double scaleFactor = displayInfo.LogicalDpi / 96.0f;
 
-                float targetSize = 13f; // 默认磅值
+                float targetSize = 16f; // 默认磅值
                 // if (scaleFactor > 2.0) targetSize = 26f; // 高分屏补偿
 
                 string targetFont = "Consolas";

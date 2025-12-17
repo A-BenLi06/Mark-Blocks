@@ -189,10 +189,14 @@ namespace MetroMarkdownEditor.WindowsPhone
             var ctrlState = Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(Windows.System.VirtualKey.Control);
             bool isCtrlPressed = (ctrlState & Windows.UI.Core.CoreVirtualKeyStates.Down) == Windows.UI.Core.CoreVirtualKeyStates.Down;
 
+            // 保存
             if (isCtrlPressed && e.Key == Windows.System.VirtualKey.S)
             {
                 e.Handled = true;
-                var _ = ViewModel.SaveAsync();
+                if (ViewModel != null)
+                {
+                    var _ = ViewModel.SaveAsync();
+                }
                 return;
             }
 
