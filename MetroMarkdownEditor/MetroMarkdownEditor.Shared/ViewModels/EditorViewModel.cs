@@ -11,6 +11,8 @@ using MetroMarkdownEditor.Services;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.UI.Xaml;
+using Windows.UI.Text;
+
 #if WINDOWS_PHONE_APP
 using Windows.ApplicationModel.Activation;
 #endif
@@ -31,6 +33,8 @@ namespace MetroMarkdownEditor.ViewModels
         private IReadOnlyList<MarkdownBlock> _previewBlocks = new List<MarkdownBlock>();
         private bool _isSaving;
         private string _saveStatusText;
+        private List<OutlineItem> _outlineItems;
+        private int _scrollToLineRequest = -1;
         private string _exportContent; // For WP8.1 continuation
 
         public EditorViewModel(ThemeService themeService, RecentFileService recentFiles)
@@ -90,6 +94,7 @@ namespace MetroMarkdownEditor.ViewModels
                 {
                     _viewMode = value;
                     RaisePropertyChanged();
+                    RaisePropertyChanged("IsOutlineVisible");
                 }
             }
         }
@@ -143,6 +148,11 @@ namespace MetroMarkdownEditor.ViewModels
             }
         }
 
+        public bool IsOutlineVisible
+        {
+            get { return ViewMode == EditorViewMode.Preview; }
+        }
+
         public bool IsSaving
         {
             get { return _isSaving; }
@@ -164,6 +174,32 @@ namespace MetroMarkdownEditor.ViewModels
                 if (_saveStatusText != value)
                 {
                     _saveStatusText = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        public List<OutlineItem> OutlineItems
+        {
+            get { return _outlineItems; }
+            private set
+            {
+                if (_outlineItems != value)
+                {
+                    _outlineItems = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        public int ScrollToLineRequest
+        {
+            get { return _scrollToLineRequest; }
+            set
+            {
+                if (_scrollToLineRequest != value)
+                {
+                    _scrollToLineRequest = value;
                     RaisePropertyChanged();
                 }
             }
@@ -408,12 +444,40 @@ namespace MetroMarkdownEditor.ViewModels
             var rendered = _renderService.RenderMarkdown(markdown);
             PreviewBlocks = rendered.Blocks;
             PreviewContent = NormalizeImageSourcesInHtml(rendered.Html);
+            ParseOutline(markdown);
         }
 
         private string ConvertMarkdownToHtml(string markdown)
         {
             var html = _renderService.ToHtml(markdown ?? string.Empty);
             return NormalizeImageSourcesInHtml(html);
+        }
+
+        private void ParseOutline(string markdown)
+        {
+            if (string.IsNullOrEmpty(markdown))
+            {
+                OutlineItems = null;
+                return;
+            }
+
+            var items = new List<OutlineItem>();
+            var lines = markdown.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (line.StartsWith("#"))
+                {
+                    int level = 0;
+                    while (level < line.Length && line[level] == '#') level++;
+                    
+                    if (level > 0 && level <= 6)
+                    {
+                        items.Add(new OutlineItem(line.Substring(level).Trim(), level, i));
+                    }
+                }
+            }
+            OutlineItems = items;
         }
 
         private string NormalizeImageSource(string path)
@@ -673,5 +737,24 @@ namespace MetroMarkdownEditor.ViewModels
             SaveStatusText = null;
         }
 #endif
+    }
+
+    public class OutlineItem
+    {
+        public string Title { get; private set; }
+        public int Level { get; private set; }
+        public int LineNumber { get; private set; }
+
+        public OutlineItem(string title, int level, int line)
+        {
+            Title = title;
+            Level = level;
+            LineNumber = line;
+        }
+
+        // View Helpers for Binding
+        public Thickness Margin => new Thickness((Level - 1) * 24, 4, 0, 4);
+        public double FontSize => Level == 1 ? 24 : (Level == 2 ? 20 : 16);
+        public FontWeight FontWeight => Level == 1 ? FontWeights.Bold : (Level == 2 ? FontWeights.Normal : FontWeights.Light);
     }
 }

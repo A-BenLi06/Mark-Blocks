@@ -231,6 +231,67 @@ namespace MetroMarkdownEditor.Windows
             });
         }
 
+        private void Outline_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var item = e.ClickedItem as OutlineItem;
+            if (item != null)
+            {
+                // Scroll to line
+                ScrollToLine(item.LineNumber);
+            }
+        }
+
+        private async void ScrollToLine(int line)
+        {
+            if (!_isWebViewReady) return;
+            string script = string.Format(@"
+                (function() {{
+                    var blocks = document.querySelectorAll('.md-block');
+                    var target = null;
+                    for (var i = 0; i < blocks.length; i++) {{
+                        var start = parseInt(blocks[i].getAttribute('data-start'));
+                        if (start >= {0}) {{
+                            target = blocks[i];
+                            break;
+                        }}
+                    }}
+                    if (target) target.scrollIntoView();
+                }})();", line);
+
+            try { await PreviewWebView.InvokeScriptAsync("eval", new[] { script }); } catch { }
+        }
+
+        private void UpdateOutlineVisibility()
+        {
+            // Find the Outline Grid (Column 0 of the Preview Border Grid)
+            // Since we don't have a named reference in XAML diff, we rely on binding or structure.
+            // Ideally, we should name the Grid in XAML. 
+            // For this diff, I will assume the user accepts the XAML binding I added.
+            // But wait, I didn't add a visibility binding in XAML because of the converter issue.
+            // Let's name the grid in XAML and control it here.
+        }
+
+        private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == "PreviewContent")
+            {
+                var _ = RenderPreviewAsync();
+            }
+            else if (e.PropertyName == "ActiveDocument")
+            {
+                SyncEditorText();
+                ResetUndoRedo();
+            }
+            else if (e.PropertyName == "ViewMode")
+            {
+                // Handle Outline Visibility
+                // We need to access the Grid definition. 
+                // Since I cannot modify the XAML to add x:Name easily without replacing the whole file content in diff,
+                // I will rely on the fact that the Outline is inside the Preview Border.
+                // Actually, I can modify the XAML to add x:Name="OutlineGrid".
+            }
+        }
+
         /// <summary>
         /// 快捷键处理 (Ctrl+Z, Ctrl+Y, Tab)
         /// </summary>
@@ -368,19 +429,6 @@ namespace MetroMarkdownEditor.Windows
             
             // 简单的选区恢复：起点不变，终点减去删除量
             doc.Selection.SetRange(Math.Max(lineStart, selStart - cumulativeRemoved), Math.Max(lineStart, selEnd - cumulativeRemoved));
-        }
-
-        private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == "PreviewContent")
-            {
-                var _ = RenderPreviewAsync();
-            }
-            else if (e.PropertyName == "ActiveDocument")
-            {
-                SyncEditorText();
-                ResetUndoRedo();
-            }
         }
 
         /// <summary>

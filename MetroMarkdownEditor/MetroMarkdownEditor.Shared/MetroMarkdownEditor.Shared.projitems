@@ -17,6 +17,7 @@
     </Compile>
     <Compile Include="$(MSBuildThisFileDirectory)Common\BooleanToVisibilityConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Common\RelayCommand.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Converters\StringTruncateConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Converters\ViewModeToGridLengthConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Converters\ViewModeToVisibilityConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\RecentFileItem.cs" />

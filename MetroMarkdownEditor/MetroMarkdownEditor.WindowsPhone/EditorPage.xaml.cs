@@ -129,6 +129,13 @@ namespace MetroMarkdownEditor.WindowsPhone
                 ResetUndoRedo();
             }
 
+            // Check if we returned from Outline with a scroll request
+            if (ViewModel != null && ViewModel.ScrollToLineRequest >= 0)
+            {
+                ScrollToLine(ViewModel.ScrollToLineRequest);
+                ViewModel.ScrollToLineRequest = -1; // Reset
+            }
+
             // 4. 渲染预览
             await RenderPreviewAsync();
 
@@ -319,6 +326,14 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 SyncEditorText();
                 ResetUndoRedo();
+            }
+            else if (e.PropertyName == "ScrollToLineRequest")
+            {
+                if (ViewModel.ScrollToLineRequest >= 0)
+                {
+                    ScrollToLine(ViewModel.ScrollToLineRequest);
+                    ViewModel.ScrollToLineRequest = -1;
+                }
             }
         }
 
@@ -832,6 +847,32 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 await ViewModel.ExportAsync(format);
             }
+        }
+
+        private void OutlineButton_Click(object sender, RoutedEventArgs e)
+        {
+            Frame.Navigate(typeof(OutlinePage));
+        }
+
+        private async void ScrollToLine(int line)
+        {
+            if (!_isWebViewReady) return;
+            // Find the block closest to this line
+            string script = string.Format(@"
+                (function() {{
+                    var blocks = document.querySelectorAll('.md-block');
+                    var target = null;
+                    for (var i = 0; i < blocks.length; i++) {{
+                        var start = parseInt(blocks[i].getAttribute('data-start'));
+                        if (start >= {0}) {{
+                            target = blocks[i];
+                            break;
+                        }}
+                    }}
+                    if (target) target.scrollIntoView();
+                }})();", line);
+
+            try { await PreviewWebView.InvokeScriptAsync("eval", new[] { script }); } catch { }
         }
 
         // 自动保存设置点击

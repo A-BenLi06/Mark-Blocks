@@ -5,10 +5,12 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:common="using:MetroMarkdownEditor.Common"
+    xmlns:converters="using:MetroMarkdownEditor.Converters"
     mc:Ignorable="d"
     DataContext="{Binding Editor, Source={StaticResource Locator}}">
 
     <Page.Resources>
+        <converters:StringTruncateConverter x:Key="StringTruncateConverter" />
         <common:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
         <Style x:Key="AppBarLikeButtonStyle" TargetType="Button">
@@ -285,7 +287,7 @@
 
                                 <TextBlock x:Name="TitleText" 
                                            Grid.Column="0"
-                                           Text="{Binding Title}"
+                                           Text="{Binding Title, Converter={StaticResource StringTruncateConverter}, ConverterParameter=12}"
                                            FontSize="20"
                                            VerticalAlignment="Center" />
 
@@ -358,8 +360,46 @@
             <Border Grid.Column="1"
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Preview}">
-                <WebView x:Name="PreviewWebView"
-                         NavigationCompleted="PreviewWebView_NavigationCompleted" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="8*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Outline Sidebar (Visible only in pure Preview mode) -->
+                    <!-- Note: ViewModeToVisibilityConverter usually handles 'Preview' parameter by showing if mode is Preview OR Split. 
+                         We need a way to show ONLY if mode is Preview. 
+                         Assuming ViewMode enum: Split=0, Write=1, Preview=2. 
+                         We can use a binding to ViewMode and a custom converter or trigger, 
+                         but for simplicity here I'll assume we can bind to ViewMode directly if we had a specific converter.
+                         Since I can't easily add a new converter file for Windows project without context, 
+                         I will use a trick: If ViewMode is Split, this column width should be 0. 
+                         Actually, the simplest way is to bind Visibility. -->
+                    
+                    <Grid Grid.Column="0" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                          Visibility="{Binding IsOutlineVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock Text="Outline" FontSize="24" FontWeight="Light" Margin="12,12,0,12" />
+                        <ListView ItemsSource="{Binding OutlineItems}" 
+                                  Margin="0,50,0,0"
+                                  SelectionMode="None"
+                                  IsItemClickEnabled="True"
+                                  ItemClick="Outline_ItemClick">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Title}" 
+                                               Margin="{Binding Margin}"
+                                               FontSize="{Binding FontSize}"
+                                               FontWeight="{Binding FontWeight}"
+                                               Opacity="{Binding Opacity}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+
+                    <WebView Grid.Column="1" x:Name="PreviewWebView"
+                             NavigationCompleted="PreviewWebView_NavigationCompleted" />
+                </Grid>
             </Border>
         </Grid>
     </Grid>

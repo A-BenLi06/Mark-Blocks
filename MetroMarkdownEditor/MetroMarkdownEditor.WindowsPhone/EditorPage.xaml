@@ -10,6 +10,7 @@
     DataContext="{Binding Editor, Source={StaticResource Locator}}">
     <Page.Resources>
         <common:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <converters:StringTruncateConverter x:Key="StringTruncateConverter" />
         
         <converters:ViewModeToVisibilityConverter x:Key="ViewModeToVisibilityConverter" />
 
@@ -204,6 +205,12 @@
                         <SymbolIcon Symbol="Refresh"/>
                     </AppBarButton.Icon>
                 </AppBarButton>
+
+                <AppBarButton Label="Outline" Click="OutlineButton_Click">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="List"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
                 
                 <AppBarButton Label="Save" Command="{Binding SaveCommand}">
                     <AppBarButton.Icon>
@@ -267,13 +274,6 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-            <Button x:Name="BackButton"
-                    Style="{StaticResource CircularBackButtonStyle}"
-                    Click="BackButton_Click"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Center"
-                    Margin="0,-2,12,0" />
-
                 <ListView Grid.Column="1"
                           ItemsSource="{Binding OpenDocuments}"
                           SelectedItem="{Binding ActiveDocument, Mode=TwoWay}"
@@ -298,7 +298,7 @@
 
                                 <TextBlock x:Name="TitleText"
                                            Grid.Column="0"
-                                           Text="{Binding Title}"
+                                           Text="{Binding Title, Converter={StaticResource StringTruncateConverter}, ConverterParameter=8}"
                                            FontSize="18"
                                            VerticalAlignment="Center" />
 
