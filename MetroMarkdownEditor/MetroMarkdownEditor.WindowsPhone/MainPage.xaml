@@ -7,7 +7,8 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-    DataContext="{Binding Main, Source={StaticResource Locator}}"> <Page.Resources>
+    DataContext="{Binding Main, Source={StaticResource Locator}}">
+    <Page.Resources>
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Default">
@@ -23,6 +24,19 @@
     </Page.Resources>
 
     <Grid>
+        <!-- Custom Background Image (if set) -->
+        <Image x:Name="BackgroundImage"
+               Source="{Binding Background.BackgroundImage, Source={StaticResource Locator}}"
+               Stretch="UniformToFill"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"
+               Visibility="{Binding Background.UseCustomBackground, Source={StaticResource Locator}, Converter={StaticResource BoolToVisibilityConverter}}" />
+        
+        <!-- Overlay for readability (Dark: 70% black, Light: 70% white) -->
+        <Rectangle x:Name="BackgroundOverlay"
+                   Visibility="{Binding Background.UseCustomBackground, Source={StaticResource Locator}, Converter={StaticResource BoolToVisibilityConverter}}" />
+        
+        <!-- Main Content -->
         <Pivot Title="METRO MARKDOWN EDITOR">
             <PivotItem Header="home">
                 <Grid>
@@ -103,15 +117,87 @@
             </PivotItem>
 
             <PivotItem Header="settings">
-                <StackPanel Margin="19,12,19,0">
-                    <ToggleSwitch Header="Auto Save" 
-                                  IsOn="{Binding AutoSaveEnabled, Mode=TwoWay}" />
-                    <TextBlock Text="Automatically save changes when switching files or exiting."
-                               Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                               Opacity="0.6"
-                               FontSize="14"
-                               TextWrapping="Wrap" />
-                </StackPanel>
+                <ScrollViewer>
+                    <StackPanel Margin="19,12,19,0">
+                        <!-- Auto Save Setting -->
+                        <ToggleSwitch Header="Auto Save" 
+                                      IsOn="{Binding AutoSaveEnabled, Mode=TwoWay}" />
+                        <TextBlock Text="Automatically save changes when switching files or exiting."
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Opacity="0.6"
+                                   FontSize="14"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,24" />
+
+                        <!-- Theme Background Setting -->
+                        <TextBlock Text="Background Theme"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,0,0,8" />
+                        <TextBlock Text="Set a custom background image for the main page."
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Opacity="0.6"
+                                   FontSize="14"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        
+                        <Button Content="Choose Image"
+                                Click="ChooseBackground_Click"
+                                HorizontalAlignment="Stretch"
+                                Height="48"
+                                FontSize="16"
+                                Margin="0,0,0,8" />
+                        
+                        <Button Content="Reset to Default"
+                                Click="ResetBackground_Click"
+                                HorizontalAlignment="Stretch"
+                                Height="48"
+                                FontSize="16"
+                                Visibility="{Binding Background.UseCustomBackground, Source={StaticResource Locator}, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                        <!-- Accent Color Setting -->
+                        <TextBlock Text="Accent Color"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,24,0,8" />
+                        <TextBlock Text="Use system accent color instead of the default cyan."
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Opacity="0.6"
+                                   FontSize="14"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8" />
+                        <ToggleSwitch x:Name="UseSystemAccentToggle"
+                                      Header="Use system accent color"
+                                      IsOn="{Binding Theme.UseSystemAccentColor, Source={StaticResource Locator}, Mode=TwoWay}" />
+
+                        <!-- Preview Theme Setting -->
+                        <TextBlock Text="Preview Theme"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,24,0,8" />
+                        <TextBlock Text="Choose a background color for the markdown preview."
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Opacity="0.6"
+                                   FontSize="14"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        <RadioButton Content="Default (Grey)"
+                                     GroupName="PreviewTheme"
+                                     IsChecked="{Binding Theme.IsPreviewThemeGrey, Source={StaticResource Locator}, Mode=TwoWay}"
+                                     Margin="0,0,0,8" />
+                        <RadioButton Content="AMOLED Black"
+                                     GroupName="PreviewTheme"
+                                     IsChecked="{Binding Theme.IsPreviewThemeAMOLED, Source={StaticResource Locator}, Mode=TwoWay}"
+                                     Margin="0,0,0,8" />
+                        <RadioButton Content="Tokyo Night"
+                                     GroupName="PreviewTheme"
+                                     IsChecked="{Binding Theme.IsPreviewThemeTokyoNight, Source={StaticResource Locator}, Mode=TwoWay}"
+                                     Margin="0,0,0,8" />
+                    </StackPanel>
+                </ScrollViewer>
             </PivotItem>
         </Pivot>
     </Grid>

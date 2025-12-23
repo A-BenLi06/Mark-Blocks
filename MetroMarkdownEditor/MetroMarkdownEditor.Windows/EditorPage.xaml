@@ -43,7 +43,7 @@
         <Style x:Key="FileTabItemStyle" TargetType="ListViewItem">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontSize" Value="36" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
@@ -57,96 +57,35 @@
                                 </VisualStateGroup>
 
                                 <VisualStateGroup x:Name="SelectionStates">
-                                    <VisualState x:Name="Unselected" />
-
-                                    <VisualState x:Name="Selected">
+                                    <VisualState x:Name="Unselected">
                                         <Storyboard>
                                             <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
                                                 <DiscreteObjectKeyFrame KeyTime="0">
                                                     <DiscreteObjectKeyFrame.Value>
-                                                        <SolidColorBrush Color="{ThemeResource SystemAccentColor}" />
-                                                    </DiscreteObjectKeyFrame.Value>
-                                                </DiscreteObjectKeyFrame>
-                                            </ObjectAnimationUsingKeyFrames>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="FontWeight">
-                                                <DiscreteObjectKeyFrame KeyTime="0">
-                                                    <DiscreteObjectKeyFrame.Value>
-                                                        <FontWeight>light</FontWeight>
+                                                        <SolidColorBrush Color="#999999" />
                                                     </DiscreteObjectKeyFrame.Value>
                                                 </DiscreteObjectKeyFrame>
                                             </ObjectAnimationUsingKeyFrames>
                                         </Storyboard>
                                     </VisualState>
 
-                                    <VisualState x:Name="SelectedUnfocused">
-                                        <Storyboard>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
-                                                <DiscreteObjectKeyFrame KeyTime="0">
-                                                    <DiscreteObjectKeyFrame.Value>
-                                                        <SolidColorBrush Color="{ThemeResource SystemAccentColor}" />
-                                                    </DiscreteObjectKeyFrame.Value>
-                                                </DiscreteObjectKeyFrame>
-                                            </ObjectAnimationUsingKeyFrames>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="FontWeight">
-                                                <DiscreteObjectKeyFrame KeyTime="0">
-                                                    <DiscreteObjectKeyFrame.Value>
-                                                        <FontWeight>light</FontWeight>
-                                                    </DiscreteObjectKeyFrame.Value>
-                                                </DiscreteObjectKeyFrame>
-                                            </ObjectAnimationUsingKeyFrames>
-                                        </Storyboard>
-                                    </VisualState>
-
-                                    <VisualState x:Name="SelectedPointerOver">
-                                        <Storyboard>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
-                                                <DiscreteObjectKeyFrame KeyTime="0">
-                                                    <DiscreteObjectKeyFrame.Value>
-                                                        <SolidColorBrush Color="{ThemeResource SystemAccentColor}" />
-                                                    </DiscreteObjectKeyFrame.Value>
-                                                </DiscreteObjectKeyFrame>
-                                            </ObjectAnimationUsingKeyFrames>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="FontWeight">
-                                                <DiscreteObjectKeyFrame KeyTime="0">
-                                                    <DiscreteObjectKeyFrame.Value>
-                                                        <FontWeight>light</FontWeight>
-                                                    </DiscreteObjectKeyFrame.Value>
-                                                </DiscreteObjectKeyFrame>
-                                            </ObjectAnimationUsingKeyFrames>
-                                        </Storyboard>
-                                    </VisualState>
-
-                                    <VisualState x:Name="SelectedPressed">
-                                        <Storyboard>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
-                                                <DiscreteObjectKeyFrame KeyTime="0">
-                                                    <DiscreteObjectKeyFrame.Value>
-                                                        <SolidColorBrush Color="{ThemeResource SystemAccentColor}" />
-                                                    </DiscreteObjectKeyFrame.Value>
-                                                </DiscreteObjectKeyFrame>
-                                            </ObjectAnimationUsingKeyFrames>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="FontWeight">
-                                                <DiscreteObjectKeyFrame KeyTime="0">
-                                                    <DiscreteObjectKeyFrame.Value>
-                                                        <FontWeight>light</FontWeight>
-                                                    </DiscreteObjectKeyFrame.Value>
-                                                </DiscreteObjectKeyFrame>
-                                            </ObjectAnimationUsingKeyFrames>
-                                        </Storyboard>
-                                    </VisualState>
+                                    <VisualState x:Name="Selected" />
+                                    <VisualState x:Name="SelectedUnfocused" />
+                                    <VisualState x:Name="SelectedPointerOver" />
+                                    <VisualState x:Name="SelectedPressed" />
                                 </VisualStateGroup>
                             </VisualStateManager.VisualStateGroups>
 
                             <ContentControl x:Name="ColorContainer"
-                                            Foreground="#FF999999"
-                                            FontWeight="Light"
+                                            Foreground="{Binding Theme.AccentBrush, Source={StaticResource Locator}}"
+                                            FontWeight="Semilight"
                                             HorizontalContentAlignment="Stretch"
                                             VerticalContentAlignment="Center">
 
                                 <ContentPresenter x:Name="TabContent"
                                                   Content="{TemplateBinding Content}"
                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                  Margin="12,6,12,6" />
+                                                  Margin="12,8,12,8" />
                             </ContentControl>
                         </Grid>
                     </ControlTemplate>
@@ -162,7 +101,7 @@
     </Page.Transitions>
 
     <Page.BottomAppBar>
-        <CommandBar>
+        <CommandBar IsOpen="False" IsSticky="True">
             <CommandBar.Content>
                 <Grid />
             </CommandBar.Content>
@@ -248,29 +187,41 @@
         </Grid>
 
         <Border Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                BorderBrush="{ThemeResource ApplicationForegroundThemeBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="12,8,12,8">
+                BorderThickness="0"
+                Padding="0,16,12,16">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
+                <!-- Fixed accent bar at left edge -->
+                <Rectangle x:Name="AccentBar"
+                           Grid.Column="0"
+                           Width="16"
+                           Fill="{Binding Theme.AccentBrush, Source={StaticResource Locator}}"
+                           VerticalAlignment="Stretch"
+                           HorizontalAlignment="Left" />
+
                 <Button x:Name="BackButton"
+                        Grid.Column="1"
                         Style="{StaticResource CircularBackButtonStyle}"
                         Click="BackButton_Click"
                         HorizontalAlignment="Left"
-                        VerticalAlignment="Center" />
+                        VerticalAlignment="Center"
+                        Margin="8,0,0,0" />
 
-                <ListView Grid.Column="1"
+                <!-- 文件标签页容器 -->
+                <ListView x:Name="FileTabsListView"
+                          Grid.Column="2"
+                          Margin="12,0,0,0"
                           ItemsSource="{Binding OpenDocuments}"
                           SelectedItem="{Binding ActiveDocument, Mode=TwoWay}"
                           SelectionMode="Single"
                           ScrollViewer.HorizontalScrollMode="Enabled"
-                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                           ScrollViewer.VerticalScrollMode="Disabled"
-                          Margin="12,0,0,0"
                           ItemContainerStyle="{StaticResource FileTabItemStyle}">
                     <ListView.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -287,13 +238,15 @@
 
                                 <TextBlock x:Name="TitleText" 
                                            Grid.Column="0"
-                                           Text="{Binding Title, Converter={StaticResource StringTruncateConverter}, ConverterParameter=12}"
-                                           FontSize="20"
+                                           Text="{Binding Title}"
+                                           FontSize="36"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="600"
                                            VerticalAlignment="Center" />
 
                                 <Button Grid.Column="1"
-                                        Width="28" Height="28"
-                                        Margin="8,0,0,0"
+                                        Width="40" Height="40"
+                                        Margin="12,0,0,0"
                                         Command="{Binding DataContext.CloseDocumentCommand, ElementName=LayoutRoot}"
                                         CommandParameter="{Binding}">
 
@@ -335,19 +288,18 @@
                         <RowDefinition Height="40" />
                     </Grid.RowDefinitions>
 
-                    <RichEditBox x:Name="EditorBox"
-                                 Grid.Row="0"
-                                 TextWrapping="Wrap"
-                                 AcceptsReturn="True"
-                                 IsSpellCheckEnabled="False"
-                                 FontFamily="Consolas"
-                                 FontSize="16"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Padding="30,24,30,24"
-                                 Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                                 TextChanged="EditorBox_TextChanged"
-                                 KeyDown="EditorBox_KeyDown" />
+                    <RichEditBox x:Name="EditorBox" Grid.Row="0"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     IsSpellCheckEnabled="False"
+                                     FontFamily="Consolas"
+                                     FontSize="16"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Padding="30,24,30,24"
+                                     Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                     TextChanged="EditorBox_TextChanged"
+                                     KeyDown="EditorBox_KeyDown" />
 
                     <Border Grid.Row="1"
                             Background="Transparent"
@@ -360,47 +312,18 @@
             <Border Grid.Column="1"
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Preview}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*" />
-                        <ColumnDefinition Width="8*" />
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Outline Sidebar (Visible only in pure Preview mode) -->
-                    <!-- Note: ViewModeToVisibilityConverter usually handles 'Preview' parameter by showing if mode is Preview OR Split. 
-                         We need a way to show ONLY if mode is Preview. 
-                         Assuming ViewMode enum: Split=0, Write=1, Preview=2. 
-                         We can use a binding to ViewMode and a custom converter or trigger, 
-                         but for simplicity here I'll assume we can bind to ViewMode directly if we had a specific converter.
-                         Since I can't easily add a new converter file for Windows project without context, 
-                         I will use a trick: If ViewMode is Split, this column width should be 0. 
-                         Actually, the simplest way is to bind Visibility. -->
-                    
-                    <Grid Grid.Column="0" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                          Visibility="{Binding IsOutlineVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock Text="Outline" FontSize="24" FontWeight="Light" Margin="12,12,0,12" />
-                        <ListView ItemsSource="{Binding OutlineItems}" 
-                                  Margin="0,50,0,0"
-                                  SelectionMode="None"
-                                  IsItemClickEnabled="True"
-                                  ItemClick="Outline_ItemClick">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Title}" 
-                                               Margin="{Binding Margin}"
-                                               FontSize="{Binding FontSize}"
-                                               FontWeight="{Binding FontWeight}"
-                                               Opacity="{Binding Opacity}"
-                                               TextTrimming="CharacterEllipsis" />
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </Grid>
-
-                    <WebView Grid.Column="1" x:Name="PreviewWebView"
-                             NavigationCompleted="PreviewWebView_NavigationCompleted" />
-                </Grid>
+                <!-- Centered WebView for preview -->
+                <WebView x:Name="PreviewWebView"
+                         NavigationCompleted="PreviewWebView_NavigationCompleted" />
             </Border>
         </Grid>
     </Grid>
 </Page>
+
+
+
+
+
+
+
+

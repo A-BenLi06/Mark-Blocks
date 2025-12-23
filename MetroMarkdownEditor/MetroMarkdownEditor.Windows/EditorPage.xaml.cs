@@ -108,6 +108,10 @@ namespace MetroMarkdownEditor.Windows
             var request = e.Parameter as EditorNavigationRequest;
             if (ViewModel != null)
             {
+                // 关键：先清空撤销历史，确保新文件不继承旧文件的 Undo 记录
+                _undoStack.Clear();
+                _redoStack.Clear();
+                
                 if (request != null)
                 {
                     switch (request.Mode)
@@ -129,9 +133,8 @@ namespace MetroMarkdownEditor.Windows
                     await ViewModel.InitializeAsync();
                 }
                 
-                // 初始化编辑器内容
+                // 初始化编辑器内容 (SyncEditorText 内部会调用 ResetUndoRedo)
                 SyncEditorText();
-                ResetUndoRedo();
             }
 
             // 3. 初始渲染
@@ -139,6 +142,9 @@ namespace MetroMarkdownEditor.Windows
             
             // 4. 页面加载完成，最后再强制应用一次格式，确保万无一失
             ApplyEditorFormatting();
+            
+            // 5. 注册全局快捷键监听（即使焦点不在编辑框也能触发）
+            Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
         }
 
         /// <summary>
@@ -161,22 +167,81 @@ namespace MetroMarkdownEditor.Windows
             {
                 _editorScrollViewer.ViewChanged -= OnEditorScrollViewerViewChanged;
             }
+            
+            // 取消全局快捷键监听
+            Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
 
             base.OnNavigatedFrom(e);
+        }
+        
+        /// <summary>
+        /// 全局快捷键处理（即使焦点不在编辑框也能触发）
+        /// </summary>
+        private void CoreWindow_KeyDown(global::Windows.UI.Core.CoreWindow sender, global::Windows.UI.Core.KeyEventArgs args)
+        {
+            var ctrlState = sender.GetKeyState(global::Windows.System.VirtualKey.Control);
+            bool isCtrlPressed = (ctrlState & global::Windows.UI.Core.CoreVirtualKeyStates.Down) == global::Windows.UI.Core.CoreVirtualKeyStates.Down;
+            
+            if (!isCtrlPressed) return;
+            
+            // Ctrl+S: 保存
+            if (args.VirtualKey == global::Windows.System.VirtualKey.S)
+            {
+                args.Handled = true;
+                if (ViewModel != null)
+                {
+                    var _ = ViewModel.SaveAsync();
+                }
+                return;
+            }
+            
+            // Ctrl+Z: 撤销 (只在编辑框没有焦点时处理，遟免重复)
+            if (args.VirtualKey == global::Windows.System.VirtualKey.Z && !EditorBox.FocusState.Equals(FocusState.Unfocused))
+            {
+                // 编辑框有焦点时，由 EditorBox_KeyDown 处理
+                return;
+            }
+            if (args.VirtualKey == global::Windows.System.VirtualKey.Z)
+            {
+                args.Handled = true;
+                Undo();
+                return;
+            }
+            
+            // Ctrl+Y: 重做
+            if (args.VirtualKey == global::Windows.System.VirtualKey.Y && !EditorBox.FocusState.Equals(FocusState.Unfocused))
+            {
+                return;
+            }
+            if (args.VirtualKey == global::Windows.System.VirtualKey.Y)
+            {
+                args.Handled = true;
+                Redo();
+                return;
+            }
         }
 
         /// <summary>
         /// RichEditBox 加载完成后，查找其内部的 ScrollViewer 以便监听滚动
+        /// 并确保文本和格式正确应用（解决导航后格式丢失问题）
         /// </summary>
         private void EditorBox_Loaded(object sender, RoutedEventArgs e)
         {
-            if (_editorScrollViewer != null) return;
-
-            // 使用 VisualTreeHelper 查找内部控件
-            _editorScrollViewer = FindScrollViewer(EditorBox);
-            if (_editorScrollViewer != null)
+            // 查找内部 ScrollViewer（仅第一次）
+            if (_editorScrollViewer == null)
             {
-                _editorScrollViewer.ViewChanged += OnEditorScrollViewerViewChanged;
+                _editorScrollViewer = FindScrollViewer(EditorBox);
+                if (_editorScrollViewer != null)
+                {
+                    _editorScrollViewer.ViewChanged += OnEditorScrollViewerViewChanged;
+                }
+            }
+            
+            // 每次加载完成后，确保同步文本和应用格式
+            // 这是修复从 MainPage 再次打开同一文件时格式丢失的关键
+            if (ViewModel != null && ViewModel.ActiveDocument != null)
+            {
+                SyncEditorText();
             }
         }
 
@@ -231,46 +296,7 @@ namespace MetroMarkdownEditor.Windows
             });
         }
 
-        private void Outline_ItemClick(object sender, ItemClickEventArgs e)
-        {
-            var item = e.ClickedItem as OutlineItem;
-            if (item != null)
-            {
-                // Scroll to line
-                ScrollToLine(item.LineNumber);
-            }
-        }
-
-        private async void ScrollToLine(int line)
-        {
-            if (!_isWebViewReady) return;
-            string script = string.Format(@"
-                (function() {{
-                    var blocks = document.querySelectorAll('.md-block');
-                    var target = null;
-                    for (var i = 0; i < blocks.length; i++) {{
-                        var start = parseInt(blocks[i].getAttribute('data-start'));
-                        if (start >= {0}) {{
-                            target = blocks[i];
-                            break;
-                        }}
-                    }}
-                    if (target) target.scrollIntoView();
-                }})();", line);
-
-            try { await PreviewWebView.InvokeScriptAsync("eval", new[] { script }); } catch { }
-        }
-
-        private void UpdateOutlineVisibility()
-        {
-            // Find the Outline Grid (Column 0 of the Preview Border Grid)
-            // Since we don't have a named reference in XAML diff, we rely on binding or structure.
-            // Ideally, we should name the Grid in XAML. 
-            // For this diff, I will assume the user accepts the XAML binding I added.
-            // But wait, I didn't add a visibility binding in XAML because of the converter issue.
-            // Let's name the grid in XAML and control it here.
-        }
-
+        // When theme changed, refresh highlighting and preview
         private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == "PreviewContent")
@@ -281,15 +307,47 @@ namespace MetroMarkdownEditor.Windows
             {
                 SyncEditorText();
                 ResetUndoRedo();
+                
+                // 自动滚动标签栏使当前文档可见 (平滑动画)
+                var __ = ScrollToActiveDocumentAsync();
             }
-            else if (e.PropertyName == "ViewMode")
+        }
+        
+        /// <summary>
+        /// 平滑滚动到当前激活的文档标签页
+        /// </summary>
+        private async System.Threading.Tasks.Task ScrollToActiveDocumentAsync()
+        {
+            if (ViewModel?.ActiveDocument == null || FileTabsListView == null) return;
+            
+            try
             {
-                // Handle Outline Visibility
-                // We need to access the Grid definition. 
-                // Since I cannot modify the XAML to add x:Name easily without replacing the whole file content in diff,
-                // I will rely on the fact that the Outline is inside the Preview Border.
-                // Actually, I can modify the XAML to add x:Name="OutlineGrid".
+                // 等待一帧确保布局已更新
+                await System.Threading.Tasks.Task.Delay(50);
+                
+                // 获取 ListView 内部的 ScrollViewer
+                var scrollViewer = FindScrollViewer(FileTabsListView);
+                if (scrollViewer == null) return;
+                
+                // 获取当前激活文档的索引
+                var index = ViewModel.OpenDocuments.IndexOf(ViewModel.ActiveDocument);
+                if (index < 0) return;
+                
+                // 获取对应的容器
+                var container = FileTabsListView.ContainerFromIndex(index) as FrameworkElement;
+                if (container == null) return;
+                
+                // 计算目标位置 (居中显示)
+                var transform = container.TransformToVisual(FileTabsListView);
+                var position = transform.TransformPoint(new global::Windows.Foundation.Point(0, 0));
+                
+                var targetOffset = position.X - (scrollViewer.ViewportWidth / 2) + (container.ActualWidth / 2);
+                targetOffset = Math.Max(0, Math.Min(targetOffset, scrollViewer.ScrollableWidth));
+                
+                // 平滑滚动
+                scrollViewer.ChangeView(targetOffset, null, null, false); // false = 启用动画
             }
+            catch { /* 忽略滚动错误 */ }
         }
 
         /// <summary>
@@ -463,10 +521,11 @@ namespace MetroMarkdownEditor.Windows
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
+            // Always navigate to MainPage, ignoring navigation history
             var frame = Frame;
-            if (frame != null && frame.CanGoBack)
+            if (frame != null)
             {
-                frame.GoBack();
+                frame.Navigate(typeof(MainPage));
             }
         }
 

@@ -37,6 +37,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private bool _pendingRender;
         private ElementTheme _lastTheme = ElementTheme.Light;
         private INotifyPropertyChanged _themeViewModel;
+        private bool _isTabBarHidden; // 预览模式下标签栏是否隐藏
 
         private EditorViewModel ViewModel
         {
@@ -72,11 +73,9 @@ namespace MetroMarkdownEditor.WindowsPhone
             // 如果已经处理过（比如弹窗关闭），则跳过
             if (e.Handled) return;
 
-            if (Frame.CanGoBack)
-            {
-                e.Handled = true;
-                Frame.GoBack();
-            }
+            e.Handled = true;
+            // 直接导航到主页面，而不是返回上一状态
+            Frame.Navigate(typeof(MainPage));
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -101,6 +100,10 @@ namespace MetroMarkdownEditor.WindowsPhone
 
                 var request = e.Parameter as EditorNavigationRequest;
                 
+                // 关键：先清空撤销历史，确保新文件不继承旧文件的 Undo 记录
+                _undoStack.Clear();
+                _redoStack.Clear();
+                
                 // 1. 根据不同模式初始化数据
                 if (request != null)
                 {
@@ -124,16 +127,8 @@ namespace MetroMarkdownEditor.WindowsPhone
                     await ViewModel.InitializeAsync();
                 }
 
-                // 3. 同步文字内容到编辑器
+                // 3. 同步文字内容到编辑器 (SyncEditorText 内部会调用 ResetUndoRedo)
                 SyncEditorText();
-                ResetUndoRedo();
-            }
-
-            // Check if we returned from Outline with a scroll request
-            if (ViewModel != null && ViewModel.ScrollToLineRequest >= 0)
-            {
-                ScrollToLine(ViewModel.ScrollToLineRequest);
-                ViewModel.ScrollToLineRequest = -1; // Reset
             }
 
             // 4. 渲染预览
@@ -326,14 +321,6 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 SyncEditorText();
                 ResetUndoRedo();
-            }
-            else if (e.PropertyName == "ScrollToLineRequest")
-            {
-                if (ViewModel.ScrollToLineRequest >= 0)
-                {
-                    ScrollToLine(ViewModel.ScrollToLineRequest);
-                    ViewModel.ScrollToLineRequest = -1;
-                }
             }
         }
 
@@ -849,31 +836,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             }
         }
 
-        private void OutlineButton_Click(object sender, RoutedEventArgs e)
-        {
-            Frame.Navigate(typeof(OutlinePage));
-        }
 
-        private async void ScrollToLine(int line)
-        {
-            if (!_isWebViewReady) return;
-            // Find the block closest to this line
-            string script = string.Format(@"
-                (function() {{
-                    var blocks = document.querySelectorAll('.md-block');
-                    var target = null;
-                    for (var i = 0; i < blocks.length; i++) {{
-                        var start = parseInt(blocks[i].getAttribute('data-start'));
-                        if (start >= {0}) {{
-                            target = blocks[i];
-                            break;
-                        }}
-                    }}
-                    if (target) target.scrollIntoView();
-                }})();", line);
-
-            try { await PreviewWebView.InvokeScriptAsync("eval", new[] { script }); } catch { }
-        }
 
         // 自动保存设置点击
         private void AutoSaveSettings_Click(object sender, RoutedEventArgs e)
@@ -900,7 +863,7 @@ namespace MetroMarkdownEditor.WindowsPhone
                 if (EditorBox.Document != null)
                 {
                     var format = EditorBox.Document.GetDefaultParagraphFormat();
-                    format.SetLineSpacing(LineSpacingRule.Multiple, 1.5f);
+                    format.SetLineSpacing(LineSpacingRule.Multiple, 1.2f); // 紧凑行距，贴近预览观感
                     EditorBox.Document.SetDefaultParagraphFormat(format);
                 }
             }
@@ -972,9 +935,55 @@ namespace MetroMarkdownEditor.WindowsPhone
         private string BuildPhoneCss()
         {
             var baseCss = ViewModel != null ? ViewModel.PreviewCss : string.Empty;
-            // 针对手机优化字体大小
-            var phoneScale = "<style>body{font-size:14px;line-height:1.6;} pre{font-size:12px;} pre code, code{font-size:12px;}</style>";
+            // Windows Phone 风格: 纯黑背景, 19px左右边距, 紧凑标题间距
+            var phoneScale = @"<style>
+                body { 
+                    background: #181818ff !important; 
+                    font-size: 14px !important; 
+                    line-height: 1.5 !important; 
+                    padding: 0 16px !important; 
+                    margin: 0 !important;
+                }
+                h1, h2, h3, h4, h5, h6 { margin: 8px 0 4px 0 !important; }
+                h1 { font-size: 28px !important; }
+                h2 { font-size: 22px !important; }
+                h3 { font-size: 18px !important; }
+                p { margin: 6px 0 !important; }
+                pre { font-size: 12px !important; }
+                pre code, code { font-size: 12px !important; }
+            </style>";
             return (baseCss ?? string.Empty) + phoneScale;
+        }
+        
+        // ==========================================
+        // 沉浸模式标签栏切换 (仅对 Preview 生效)
+        // 点击 CommandBar 中的 Immersive 按钮切换
+        // ==========================================
+        
+        private void ImmersiveToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isTabBarHidden)
+            {
+                ShowTabBar();
+                ImmersiveToggleButton.Label = "Immersive";
+            }
+            else
+            {
+                HideTabBar();
+                ImmersiveToggleButton.Label = "Exit Immersive";
+            }
+        }
+        
+        private void HideTabBar()
+        {
+            _isTabBarHidden = true;
+            TabBar.Visibility = Windows.UI.Xaml.Visibility.Collapsed;
+        }
+        
+        private void ShowTabBar()
+        {
+            _isTabBarHidden = false;
+            TabBar.Visibility = Windows.UI.Xaml.Visibility.Visible;
         }
     }
 }

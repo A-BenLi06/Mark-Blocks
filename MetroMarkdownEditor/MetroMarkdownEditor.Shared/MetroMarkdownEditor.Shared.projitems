@@ -26,6 +26,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownRenderService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\AutoSaveService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownHighlightingHelper.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\BackgroundService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\BackgroundHistoryService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\BaseViewModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\DocumentViewModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\EditorNavigationRequest.cs" />
@@ -37,8 +39,86 @@
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)Assets\atom-one-dark.css" />
     <Content Include="$(MSBuildThisFileDirectory)Assets\atom-one-light.css" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\contrib\copy-tex.min.css" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_AMS-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_AMS-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Caligraphic-Bold.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Caligraphic-Bold.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Caligraphic-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Caligraphic-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Fraktur-Bold.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Fraktur-Bold.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Fraktur-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Fraktur-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Bold.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Bold.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-BoldItalic.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-BoldItalic.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Italic.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Italic.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Math-BoldItalic.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Math-BoldItalic.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Math-Italic.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Math-Italic.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Bold.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Bold.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Italic.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Italic.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Script-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Script-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size1-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size1-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size2-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size2-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size3-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size3-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size4-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size4-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Typewriter-Regular.ttf" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Typewriter-Regular.woff" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\katex.min.css" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\mermaid7.min.css" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)Assets\highlight.js" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\contrib\auto-render.min.js" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\contrib\copy-tex.min.js" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\contrib\mhchem.min.js" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_AMS-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Caligraphic-Bold.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Caligraphic-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Fraktur-Bold.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Fraktur-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Bold.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-BoldItalic.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Italic.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Main-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Math-BoldItalic.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Math-Italic.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Bold.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Italic.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_SansSerif-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Script-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size1-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size2-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size3-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Size4-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\fonts\KaTeX_Typewriter-Regular.woff2" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\katex.min.js" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\es6-promise.auto.min.js" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\mermaid7.min.js" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\core.min.js" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\url-polyfill.min.js" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\regenerator-runtime.js" />
   </ItemGroup>
 </Project>

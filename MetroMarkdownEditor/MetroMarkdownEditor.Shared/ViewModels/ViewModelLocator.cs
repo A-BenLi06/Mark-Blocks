@@ -8,6 +8,7 @@ namespace MetroMarkdownEditor.ViewModels
         {
             Theme = new ThemeService();
             RecentFiles = new RecentFileService();
+            Background = new BackgroundService();
             Editor = new EditorViewModel(Theme, RecentFiles);
             Main = new MainViewModel(RecentFiles);
         }
@@ -15,6 +16,8 @@ namespace MetroMarkdownEditor.ViewModels
         public ThemeService Theme { get; private set; }
 
         public RecentFileService RecentFiles { get; private set; }
+
+        public BackgroundService Background { get; private set; }
 
         public MainViewModel Main { get; private set; }
 

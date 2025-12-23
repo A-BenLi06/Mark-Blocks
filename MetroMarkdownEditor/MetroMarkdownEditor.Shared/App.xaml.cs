@@ -116,6 +116,9 @@ namespace MetroMarkdownEditor
         }
 
 #if WINDOWS_PHONE_APP
+        // Track if we're picking background image
+        public static bool IsPickingBackgroundImage { get; set; }
+
         protected override async void OnActivated(IActivatedEventArgs args)
         {
             var locator = Resources["Locator"] as ViewModelLocator;
@@ -123,7 +126,19 @@ namespace MetroMarkdownEditor
             var openArgs = args as FileOpenPickerContinuationEventArgs;
             if (openArgs != null && locator != null)
             {
-                await locator.Editor.HandleOpenPickerContinuation(openArgs);
+                // Check if we're picking a background image
+                if (IsPickingBackgroundImage)
+                {
+                    IsPickingBackgroundImage = false;
+                    if (openArgs.Files != null && openArgs.Files.Count > 0)
+                    {
+                        await locator.Background.SetBackgroundFromFileAsync(openArgs.Files[0]);
+                    }
+                }
+                else
+                {
+                    await locator.Editor.HandleOpenPickerContinuation(openArgs);
+                }
             }
             else
             {

@@ -1,0 +1,26 @@
+{
+  "name": "metromarkdowneditor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/A-BenLi06/MetroMarkdownEditor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/A-BenLi06/MetroMarkdownEditor/issues"
+  },
+  "homepage": "https://github.com/A-BenLi06/MetroMarkdownEditor#readme",
+  "devDependencies": {
+    "@babel/cli": "^7.28.3",
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5"
+  }
+}
