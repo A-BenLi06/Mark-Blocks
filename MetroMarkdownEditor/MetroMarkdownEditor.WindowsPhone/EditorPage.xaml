@@ -5,25 +5,20 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:common="using:MetroMarkdownEditor.Common"
-    xmlns:converters="using:MetroMarkdownEditor.Converters" 
+    xmlns:converters="using:MetroMarkdownEditor.Converters"
     mc:Ignorable="d"
     DataContext="{Binding Editor, Source={StaticResource Locator}}">
+
     <Page.Resources>
         <common:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <converters:StringTruncateConverter x:Key="StringTruncateConverter" />
-        
-        <converters:ViewModeToVisibilityConverter x:Key="ViewModeToVisibilityConverter" />
 
-        <Style x:Key="AppBarLikeButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{ThemeResource ApplicationForegroundThemeBrush}" />
-        </Style>
-
-        <Style x:Key="FileTabItemStyle" TargetType="ListViewItem">
+        <!-- Compact Tab Item Style -->
+        <Style x:Key="CompactFileTabItemStyle" TargetType="ListViewItem">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="FontSize" Value="24" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
@@ -35,13 +30,12 @@
                                             <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ColorContainer" Storyboard.TargetProperty="Foreground">
                                                 <DiscreteObjectKeyFrame KeyTime="0">
                                                     <DiscreteObjectKeyFrame.Value>
-                                                        <SolidColorBrush Color="#999999" />
+                                                        <SolidColorBrush Color="#888888" />
                                                     </DiscreteObjectKeyFrame.Value>
                                                 </DiscreteObjectKeyFrame>
                                             </ObjectAnimationUsingKeyFrames>
                                         </Storyboard>
                                     </VisualState>
-                                    
                                     <VisualState x:Name="Selected" />
                                     <VisualState x:Name="SelectedUnfocused" />
                                     <VisualState x:Name="SelectedPointerOver" />
@@ -54,10 +48,9 @@
                                             FontWeight="SemiBold"
                                             HorizontalContentAlignment="Stretch"
                                             VerticalContentAlignment="Center">
-                                <ContentPresenter x:Name="TabContent"
-                                                  Content="{TemplateBinding Content}"
+                                <ContentPresenter Content="{TemplateBinding Content}"
                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                  Margin="6,3,6,3" />
+                                                  Margin="4,2,4,2" />
                             </ContentControl>
                         </Grid>
                     </ControlTemplate>
@@ -65,90 +58,15 @@
             </Setter>
         </Style>
 
-        <Style x:Key="CircularBackButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="48" />
-            <Setter Property="Height" Value="48" />
+        <!-- RichEditBox style that doesn't change on focus -->
+        <Style x:Key="NoFocusRichEditBoxStyle" TargetType="RichEditBox">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Grid Width="48" Height="48" Background="Transparent">
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup x:Name="CommonStates">
-                                    <VisualState x:Name="Normal" />
-                                    <VisualState x:Name="PointerOver" />
-                                    <VisualState x:Name="Pressed">
-                                        <Storyboard>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="CircleBorder" Storyboard.TargetProperty="Background">
-                                                <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ApplicationForegroundThemeBrush}" />
-                                            </ObjectAnimationUsingKeyFrames>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ArrowIcon" Storyboard.TargetProperty="Foreground">
-                                                <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
-                                            </ObjectAnimationUsingKeyFrames>
-                                        </Storyboard>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
-
-                            <Border x:Name="CircleBorder"
-                                    Width="40" Height="40"
-                                    CornerRadius="20"
-                                    BorderBrush="{ThemeResource ApplicationForegroundThemeBrush}"
-                                    BorderThickness="2.5"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center" />
-
-                            <TextBlock x:Name="ArrowIcon"
-                                    Text="&#xE112;"
-                                    FontFamily="Segoe UI Symbol"
-                                    FontSize="18"
-                                    FontWeight="Bold"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                                    RenderTransformOrigin="0.5,0.5">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform X="0" Y="0"/>
-                                </TextBlock.RenderTransform>
-                            </TextBlock>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="ImmersiveRichEditBoxStyle" TargetType="RichEditBox">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Foreground" Value="{ThemeResource ApplicationForegroundThemeBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RichEditBox">
                         <Grid Background="Transparent">
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup x:Name="CommonStates">
-                                    <VisualState x:Name="Normal"/>
-                                    <VisualState x:Name="PointerOver"/>
-                                    <VisualState x:Name="Disabled">
-                                        <Storyboard>
-                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ContentElement"
-                                                                           Storyboard.TargetProperty="Foreground">
-                                                <DiscreteObjectKeyFrame KeyTime="0"
-                                                    Value="{ThemeResource TextControlDisabledForeground}"/>
-                                            </ObjectAnimationUsingKeyFrames>
-                                        </Storyboard>
-                                    </VisualState>
-                                </VisualStateGroup>
-
-                                <VisualStateGroup x:Name="FocusStates">
-                                    <VisualState x:Name="Focused"/>
-                                    <VisualState x:Name="Unfocused"/>
-                                    <VisualState x:Name="PointerFocused"/>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
-
                             <ScrollViewer x:Name="ContentElement"
                                           Padding="{TemplateBinding Padding}"
                                           Background="Transparent"
@@ -166,33 +84,33 @@
     </Page.Resources>
 
     <Page.BottomAppBar>
-        <CommandBar>
-            <CommandBar.Content>
-                <Grid />
-            </CommandBar.Content>
-
+        <CommandBar x:Name="EditorCommandBar">
             <CommandBar.PrimaryCommands>
-                <AppBarButton Label="Undo" Click="UndoButton_Click">
+                <!-- Undo -->
+                <AppBarButton x:Name="UndoButton" Label="Undo" Click="UndoButton_Click">
                     <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Undo"/>
+                        <SymbolIcon Symbol="Undo" />
                     </AppBarButton.Icon>
                 </AppBarButton>
 
-                <AppBarButton x:Name="ImmersiveToggleButton" Label="Immersive" Click="ImmersiveToggle_Click">
+                <!-- Immersive (WP新增) -->
+                <AppBarButton x:Name="ImmersiveButton" Label="Immersive" Click="ImmersiveButton_Click">
                     <AppBarButton.Icon>
-                        <SymbolIcon Symbol="FullScreen"/>
+                        <SymbolIcon Symbol="FullScreen" />
                     </AppBarButton.Icon>
                 </AppBarButton>
 
-                <AppBarButton Label="Mode" Command="{Binding ToggleViewModeCommand}">
+                <!-- Mode -->
+                <AppBarButton x:Name="ModeButton" Label="Mode" Click="ModeButton_Click">
                     <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Refresh"/>
+                        <SymbolIcon Symbol="Refresh" />
                     </AppBarButton.Icon>
                 </AppBarButton>
-                
-                <AppBarButton Label="Save" Command="{Binding SaveCommand}">
+
+                <!-- Save -->
+                <AppBarButton x:Name="SaveButton" Label="Save" Command="{Binding SaveCommand}">
                     <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Save"/>
+                        <SymbolIcon Symbol="Save" />
                     </AppBarButton.Icon>
                 </AppBarButton>
             </CommandBar.PrimaryCommands>
@@ -200,7 +118,7 @@
             <CommandBar.SecondaryCommands>
                 <AppBarButton Label="Redo" Click="RedoButton_Click">
                     <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Redo"/>
+                        <SymbolIcon Symbol="Redo" />
                     </AppBarButton.Icon>
                 </AppBarButton>
 
@@ -208,22 +126,26 @@
 
                 <AppBarButton Label="New" Command="{Binding NewCommand}">
                     <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Add"/>
+                        <SymbolIcon Symbol="Add" />
                     </AppBarButton.Icon>
                 </AppBarButton>
 
                 <AppBarButton Label="Open" Command="{Binding OpenCommand}">
                     <AppBarButton.Icon>
-                        <SymbolIcon Symbol="Folder"/>
+                        <SymbolIcon Symbol="Folder" />
                     </AppBarButton.Icon>
                 </AppBarButton>
 
                 <AppBarSeparator />
 
-                <AppBarButton Label="Export to Markdown" Tag="md" Click="ExportMenuItem_Click"/>
-                <AppBarButton Label="Export to HTML" Tag="html" Click="ExportMenuItem_Click"/>
-                <AppBarButton Label="Export to PDF" Tag="pdf" Click="ExportMenuItem_Click"/>
+                <AppBarButton Label="Search" Click="SearchButton_Click">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="Find" />
+                    </AppBarButton.Icon>
+                </AppBarButton>
 
+                <AppBarButton Label="Export to Markdown" Tag="md" Click="ExportButton_Click" />
+                <AppBarButton Label="Export to HTML" Tag="html" Click="ExportButton_Click" />
             </CommandBar.SecondaryCommands>
         </CommandBar>
     </Page.BottomAppBar>
@@ -234,51 +156,53 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- Saving Progress Indicator -->
         <Grid Grid.RowSpan="2"
               VerticalAlignment="Top"
               Canvas.ZIndex="99"
               IsHitTestVisible="False"
               Visibility="{Binding IsSaving, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <ProgressBar Height="4"
-                         IsIndeterminate="True"
-                         Background="Transparent" />
+            <ProgressBar Height="3" IsIndeterminate="True" Background="Transparent" />
             <TextBlock Text="{Binding SaveStatusText}"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                       FontSize="12"
-                       FontWeight="Bold"
+                       FontSize="11"
+                       FontWeight="SemiBold"
                        HorizontalAlignment="Right"
-                       Margin="0,6,12,0"/>
+                       Margin="0,5,10,0" />
         </Grid>
 
+        <!-- TabBar -->
         <Border x:Name="TabBar"
+                Grid.Row="0"
                 Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                 BorderThickness="0"
-                Padding="0,8,12,8">
+                Padding="0,16,8,16"
+                Height="96">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Fixed accent bar at left edge -->
+                <!-- Accent Bar -->
                 <Rectangle x:Name="AccentBar"
                            Grid.Column="0"
-                           Width="8"
+                           Width="6"
                            Fill="{Binding Theme.AccentBrush, Source={StaticResource Locator}}"
                            VerticalAlignment="Stretch"
                            HorizontalAlignment="Left" />
 
-                <!-- 文件标签页容器 -->
+                <!-- File Tabs -->
                 <ListView x:Name="FileTabsListView"
                           Grid.Column="1"
-                          Margin="12,0,0,0"
+                          Margin="8,0,0,0"
                           ItemsSource="{Binding OpenDocuments}"
                           SelectedItem="{Binding ActiveDocument, Mode=TwoWay}"
                           SelectionMode="Single"
                           ScrollViewer.HorizontalScrollMode="Enabled"
                           ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                           ScrollViewer.VerticalScrollMode="Disabled"
-                          ItemContainerStyle="{StaticResource FileTabItemStyle}">
+                          ItemContainerStyle="{StaticResource CompactFileTabItemStyle}">
                     <ListView.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal" />
@@ -294,12 +218,12 @@
 
                                 <TextBlock x:Name="TitleText"
                                            Grid.Column="0"
-                                           Text="{Binding Title, Converter={StaticResource StringTruncateConverter}, ConverterParameter=8}"
-                                           FontSize="18"
+                                           Text="{Binding Title, Converter={StaticResource StringTruncateConverter}, ConverterParameter=10}"
+                                           FontSize="24"
                                            VerticalAlignment="Center" />
 
                                 <Button Grid.Column="1"
-                                        Width="26" Height="26"
+                                        Width="22" Height="22"
                                         Margin="4,0,0,0"
                                         Command="{Binding DataContext.CloseDocumentCommand, ElementName=LayoutRoot}"
                                         CommandParameter="{Binding}">
@@ -309,13 +233,13 @@
                                     <Button.Template>
                                         <ControlTemplate TargetType="Button">
                                             <Grid Background="Transparent">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Grid>
                                         </ControlTemplate>
                                     </Button.Template>
                                     <TextBlock Text="&#xE106;"
                                                FontFamily="Segoe UI Symbol"
-                                               FontSize="14" />
+                                               FontSize="12" />
                                 </Button>
                             </Grid>
                         </DataTemplate>
@@ -324,37 +248,30 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1">
-            <Border Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                    Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Editor}">
+        <!-- Content Area: Editor and Preview -->
+        <Grid x:Name="ContentArea" Grid.Row="1">
+            <!-- Editor Mode -->
+            <Border x:Name="EditorContainer"
+                    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
                 <RichEditBox x:Name="EditorBox"
-                                 Style="{StaticResource ImmersiveRichEditBoxStyle}"
-                                 TextWrapping="Wrap"
-                                 AcceptsReturn="True"
-                                 IsSpellCheckEnabled="False"
-                                 FontFamily="Consolas"
-                                 FontSize="21"
-                                 BorderThickness="0"
-                                 Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                                 Padding="18,0,18,0"
-                                 Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                                 TextChanged="EditorBox_TextChanged" 
-                                 KeyDown="EditorBox_KeyDown"/>
-                </Border>
+                             Style="{StaticResource NoFocusRichEditBoxStyle}"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             IsSpellCheckEnabled="False"
+                             FontFamily="Consolas"
+                             FontSize="18"
+                             Padding="16,8,16,8"
+                             TextChanged="EditorBox_TextChanged"
+                             KeyDown="EditorBox_KeyDown" />
+            </Border>
 
-            <Border x:Name="PreviewBorder"
+            <!-- Preview Mode -->
+            <Border x:Name="PreviewContainer"
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                    Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Preview}">
+                    Visibility="Collapsed">
                 <WebView x:Name="PreviewWebView"
                          NavigationCompleted="PreviewWebView_NavigationCompleted" />
             </Border>
         </Grid>
     </Grid>
 </Page>
-
-
-
-
-
-
-

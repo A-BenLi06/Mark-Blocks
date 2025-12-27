@@ -47,7 +47,8 @@ namespace MetroMarkdownEditor
             // Initialize background service
             await BackgroundSvc.InitializeAsync();
             
-            // Update overlay color based on current theme
+            // Load background based on current mode and theme
+            BackgroundSvc.LoadBackground(ThemeSvc.IsDarkTheme);
             UpdateOverlayColor();
 
             if (ViewModel != null)
@@ -62,7 +63,8 @@ namespace MetroMarkdownEditor
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            // Only update overlay, don't subscribe to events (handled in OnNavigatedTo)
+            // Reload background and overlay on loaded
+            BackgroundSvc.LoadBackground(ThemeSvc.IsDarkTheme);
             UpdateOverlayColor();
         }
 
@@ -85,11 +87,13 @@ namespace MetroMarkdownEditor
 
         private void OnThemeChanged(object sender, System.EventArgs e)
         {
+            BackgroundSvc.LoadBackground(ThemeSvc.IsDarkTheme);
             UpdateOverlayColor();
         }
 
         private void OnBackgroundChanged(object sender, System.EventArgs e)
         {
+            BackgroundSvc.LoadBackground(ThemeSvc.IsDarkTheme);
             UpdateOverlayColor();
         }
 
@@ -100,10 +104,15 @@ namespace MetroMarkdownEditor
         /// </summary>
         private void UpdateOverlayColor()
         {
-            if (BackgroundOverlay != null && BackgroundSvc.UseCustomBackground)
+            if (BackgroundOverlay != null && BackgroundSvc.ShowOverlay)
             {
                 BackgroundOverlay.Fill = BackgroundSvc.GetOverlayBrush(ThemeSvc.IsDarkTheme);
             }
+        }
+
+        private void TextBlock_SelectionChanged(object sender, RoutedEventArgs e)
+        {
+
         }
     }
 }

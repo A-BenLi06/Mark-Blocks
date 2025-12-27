@@ -102,6 +102,32 @@ namespace MetroMarkdownEditor.Services
             }
         }
 
+        /// <summary>
+        /// Add temporary untitled file to recent files (for preserving unsaved work)
+        /// </summary>
+        public void AddTemporaryUntitled(string name, string content)
+        {
+            // Generate unique name if needed
+            var baseName = name;
+            int counter = 1;
+            while (Items.Any(i => i.Name == name && i.IsTemporary))
+            {
+                counter++;
+                name = $"{baseName}-{counter}";
+            }
+
+            var item = new RecentFileItem
+            {
+                Name = name,
+                Path = "[Unsaved]",
+                IsTemporary = true,
+                TempContent = content
+            };
+
+            Items.Insert(0, item);
+            Trim();
+        }
+
         private void MoveToTop(RecentFileItem item)
         {
             if (item == null)

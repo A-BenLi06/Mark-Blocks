@@ -7,114 +7,121 @@ using Windows.UI.Xaml.Navigation;
 using Windows.UI;
 using Windows.UI.Xaml.Media;
 using Windows.Storage.Pickers;
+using Windows.Phone.UI.Input;
 using System;
-using System.Collections.Generic;
 
 namespace MetroMarkdownEditor
 {
     public sealed partial class MainPage : Page
     {
-        private MainViewModel ViewModel
-        {
-            get { return DataContext as MainViewModel; }
-        }
+        private MainViewModel ViewModel => DataContext as MainViewModel;
 
-        private BackgroundService BackgroundSvc
-        {
-            get { return ((ViewModelLocator)App.Current.Resources["Locator"]).Background; }
-        }
+        private BackgroundService BackgroundSvc =>
+            ((ViewModelLocator)App.Current.Resources["Locator"]).Background;
 
-        private ThemeService ThemeSvc
-        {
-            get { return ((ViewModelLocator)App.Current.Resources["Locator"]).Theme; }
-        }
+        private ThemeService ThemeSvc =>
+            ((ViewModelLocator)App.Current.Resources["Locator"]).Theme;
 
         public MainPage()
         {
             InitializeComponent();
-            Loaded += OnLoaded;
-            Unloaded += OnUnloaded;
+            NavigationCacheMode = NavigationCacheMode.Required;
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
 
-            // Subscribe to theme changes
+            // Register hardware back button
+            HardwareButtons.BackPressed += HardwareButtons_BackPressed;
+
+            // Subscribe to theme and background changes
             ThemeSvc.ThemeChanged += OnThemeChanged;
-            
-            // Subscribe to background changes
             BackgroundSvc.BackgroundChanged += OnBackgroundChanged;
 
-            // Initialize background service
+            // Initialize services
             await BackgroundSvc.InitializeAsync();
             
-            // Update overlay color based on current theme
+            // Load background based on current mode and theme
+            BackgroundSvc.LoadBackground(ThemeSvc.IsDarkTheme);
             UpdateOverlayColor();
 
+            // Initialize ViewModel
             if (ViewModel != null)
             {
-                ViewModel.NavigationRequested += OnNavigationRequested;
                 await ViewModel.InitializeAsync();
             }
         }
 
-        private void OnLoaded(object sender, RoutedEventArgs e)
+        protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
-            if (ViewModel != null)
-            {
-                ViewModel.NavigationRequested -= OnNavigationRequested;
-                ViewModel.NavigationRequested += OnNavigationRequested;
-            }
-            UpdateOverlayColor();
-        }
+            base.OnNavigatedFrom(e);
 
-        private void OnUnloaded(object sender, RoutedEventArgs e)
-        {
-            if (ViewModel != null)
-            {
-                ViewModel.NavigationRequested -= OnNavigationRequested;
-            }
+            // Unregister handlers
+            HardwareButtons.BackPressed -= HardwareButtons_BackPressed;
             ThemeSvc.ThemeChanged -= OnThemeChanged;
             BackgroundSvc.BackgroundChanged -= OnBackgroundChanged;
         }
 
-        private void OnNavigationRequested(object sender, EditorNavigationRequest e)
+        private void HardwareButtons_BackPressed(object sender, BackPressedEventArgs e)
         {
-            Frame.Navigate(typeof(EditorPage), e);
-        }
-
-        private void RecentFiles_ItemClick(object sender, ItemClickEventArgs e)
-        {
-            var request = new EditorNavigationRequest
-            {
-                Mode = EditorLaunchMode.Recent,
-                RecentFile = e.ClickedItem as Services.RecentFileItem
-            };
-            Frame.Navigate(typeof(EditorPage), request);
+            // On MainPage, let system handle back (exit app)
+            // Do NOT set e.Handled = true
         }
 
         private void OnThemeChanged(object sender, EventArgs e)
         {
+            BackgroundSvc.LoadBackground(ThemeSvc.IsDarkTheme);
             UpdateOverlayColor();
         }
 
         private void OnBackgroundChanged(object sender, EventArgs e)
         {
+            BackgroundSvc.LoadBackground(ThemeSvc.IsDarkTheme);
             UpdateOverlayColor();
         }
 
-        /// <summary>
-        /// Updates the overlay color based on current theme
-        /// Dark mode: 70% black overlay
-        /// Light mode: 70% white overlay
-        /// </summary>
         private void UpdateOverlayColor()
         {
-            if (BackgroundOverlay != null && BackgroundSvc.UseCustomBackground)
+            if (BackgroundOverlay != null && BackgroundSvc.ShowOverlay)
             {
                 BackgroundOverlay.Fill = BackgroundSvc.GetOverlayBrush(ThemeSvc.IsDarkTheme);
             }
+        }
+
+        private void OpenButton_Click(object sender, RoutedEventArgs e)
+        {
+            var picker = new FileOpenPicker();
+            picker.ViewMode = PickerViewMode.List;
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add(".md");
+            picker.FileTypeFilter.Add(".markdown");
+            picker.FileTypeFilter.Add(".txt");
+
+            App.IsPickingEditorFile = true;
+            picker.PickSingleFileAndContinue();
+        }
+
+        private void WrittingButton_Click(object sender, RoutedEventArgs e)
+        {
+            var request = new EditorNavigationRequest
+            {
+                Mode = EditorLaunchMode.New
+            };
+            Frame.Navigate(typeof(EditorPage), request);
+        }
+
+        private void RecentFiles_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var recentFile = e.ClickedItem as RecentFileItem;
+            if (recentFile == null) return;
+
+            var request = new EditorNavigationRequest
+            {
+                Mode = EditorLaunchMode.Recent,
+                RecentFile = recentFile
+            };
+            Frame.Navigate(typeof(EditorPage), request);
         }
 
         private void ChooseBackground_Click(object sender, RoutedEventArgs e)
@@ -127,17 +134,8 @@ namespace MetroMarkdownEditor
             picker.FileTypeFilter.Add(".png");
             picker.FileTypeFilter.Add(".bmp");
 
-            // Set flag so App.OnActivated knows we're picking a background image
             App.IsPickingBackgroundImage = true;
-            
-            // For Windows Phone 8.1, we need to use PickSingleFileAndContinue
             picker.PickSingleFileAndContinue();
-        }
-
-        private void ResetBackground_Click(object sender, RoutedEventArgs e)
-        {
-            BackgroundSvc.ClearBackground();
         }
     }
 }
-

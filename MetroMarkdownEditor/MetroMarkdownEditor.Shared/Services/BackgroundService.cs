@@ -9,16 +9,29 @@ using Windows.UI;
 namespace MetroMarkdownEditor.Services
 {
     /// <summary>
+    /// MainPage background mode
+    /// </summary>
+    public enum MainPageBackgroundMode
+    {
+        Default,  // Bundled theme images (no overlay)
+        Pure,     // Solid color only
+        Custom    // User-selected image (with overlay)
+    }
+
+    /// <summary>
     /// Service to manage custom background image for MainPage
     /// </summary>
     public class BackgroundService : BaseViewModel
     {
         private const string BackgroundPathKey = "CustomBackgroundPath";
         private const string UseCustomBackgroundKey = "UseCustomBackground";
+        private const string BackgroundModeKey = "MainPageBackgroundMode";
 
         private ImageSource _backgroundImage;
         private bool _useCustomBackground;
         private string _currentBackgroundPath;
+        private MainPageBackgroundMode _backgroundMode = MainPageBackgroundMode.Default;
+        private bool _lastIsDarkTheme;
 
         public event EventHandler BackgroundChanged;
 
@@ -26,6 +39,7 @@ namespace MetroMarkdownEditor.Services
         {
             LoadSettings();
         }
+
 
         /// <summary>
         /// The current background image source
@@ -39,7 +53,8 @@ namespace MetroMarkdownEditor.Services
                 {
                     _backgroundImage = value;
                     RaisePropertyChanged();
-                    OnBackgroundChanged();
+                    // Do NOT call OnBackgroundChanged here to avoid infinite loop
+                    // BackgroundChanged is fired by BackgroundMode setter or explicit calls
                 }
             }
         }
@@ -76,6 +91,75 @@ namespace MetroMarkdownEditor.Services
                     RaisePropertyChanged();
                 }
             }
+        }
+
+        /// <summary>
+        /// Background mode: Default, Pure, or Custom
+        /// </summary>
+        public MainPageBackgroundMode BackgroundMode
+        {
+            get { return _backgroundMode; }
+            set
+            {
+                if (_backgroundMode != value)
+                {
+                    _backgroundMode = value;
+                    SaveSettings();
+                    RaisePropertyChanged();
+                    RaisePropertyChanged(nameof(IsDefaultMode));
+                    RaisePropertyChanged(nameof(IsPureMode));
+                    RaisePropertyChanged(nameof(IsCustomMode));
+                    RaisePropertyChanged(nameof(ShowBackground));
+                    RaisePropertyChanged(nameof(ShowOverlay));
+                    OnBackgroundChanged();
+                }
+            }
+        }
+
+        public bool IsDefaultMode
+        {
+            get { return _backgroundMode == MainPageBackgroundMode.Default; }
+            set 
+            { 
+                if (value && _backgroundMode != MainPageBackgroundMode.Default) 
+                    BackgroundMode = MainPageBackgroundMode.Default; 
+            }
+        }
+
+        public bool IsPureMode
+        {
+            get { return _backgroundMode == MainPageBackgroundMode.Pure; }
+            set 
+            { 
+                if (value && _backgroundMode != MainPageBackgroundMode.Pure) 
+                    BackgroundMode = MainPageBackgroundMode.Pure; 
+            }
+        }
+
+        public bool IsCustomMode
+        {
+            get { return _backgroundMode == MainPageBackgroundMode.Custom; }
+            set 
+            { 
+                if (value && _backgroundMode != MainPageBackgroundMode.Custom) 
+                    BackgroundMode = MainPageBackgroundMode.Custom; 
+            }
+        }
+
+        /// <summary>
+        /// Whether to show background image (Default or Custom mode)
+        /// </summary>
+        public bool ShowBackground
+        {
+            get { return _backgroundMode != MainPageBackgroundMode.Pure; }
+        }
+
+        /// <summary>
+        /// Whether to show overlay (Custom mode only)
+        /// </summary>
+        public bool ShowOverlay
+        {
+            get { return _backgroundMode == MainPageBackgroundMode.Custom && _useCustomBackground; }
         }
 
         /// <summary>
@@ -183,6 +267,58 @@ namespace MetroMarkdownEditor.Services
             return Task.FromResult(0);
         }
 
+        /// <summary>
+        /// Load background based on current mode and theme
+        /// </summary>
+        public void LoadBackground(bool isDarkTheme)
+        {
+            _lastIsDarkTheme = isDarkTheme;
+
+            switch (_backgroundMode)
+            {
+                case MainPageBackgroundMode.Default:
+                    LoadDefaultBackground(isDarkTheme);
+                    break;
+
+                case MainPageBackgroundMode.Pure:
+                    BackgroundImage = null;
+                    break;
+
+                case MainPageBackgroundMode.Custom:
+                    if (_useCustomBackground && !string.IsNullOrEmpty(_currentBackgroundPath))
+                    {
+                        LoadBackgroundImageAsync();
+                    }
+                    else
+                    {
+                        BackgroundImage = null;
+                    }
+                    break;
+            }
+
+            RaisePropertyChanged(nameof(ShowBackground));
+            RaisePropertyChanged(nameof(ShowOverlay));
+        }
+
+        private void LoadDefaultBackground(bool isDarkTheme)
+        {
+            try
+            {
+                var themeFile = isDarkTheme ? "dark" : "light";
+#if WINDOWS_PHONE_APP
+                var uri = new Uri($"ms-appx:///Assets/Mainpage/wp-mainpagebackground-{themeFile}.jpg", UriKind.Absolute);
+#else
+                var uri = new Uri($"ms-appx:///Assets/Mainpage/win-mainpagebackground-{themeFile}.jpg", UriKind.Absolute);
+#endif
+                var bitmap = new BitmapImage(uri);
+                BackgroundImage = bitmap;
+            }
+            catch
+            {
+                BackgroundImage = null;
+            }
+        }
+
         private void LoadSettings()
         {
             var settings = ApplicationData.Current.LocalSettings;
@@ -196,6 +332,15 @@ namespace MetroMarkdownEditor.Services
             {
                 _currentBackgroundPath = settings.Values[BackgroundPathKey] as string;
             }
+
+            if (settings.Values.ContainsKey(BackgroundModeKey))
+            {
+                var modeValue = settings.Values[BackgroundModeKey] as string;
+                if (!string.IsNullOrEmpty(modeValue))
+                {
+                    Enum.TryParse(modeValue, out _backgroundMode);
+                }
+            }
         }
 
         private void SaveSettings()
@@ -203,6 +348,7 @@ namespace MetroMarkdownEditor.Services
             var settings = ApplicationData.Current.LocalSettings;
             settings.Values[UseCustomBackgroundKey] = _useCustomBackground;
             settings.Values[BackgroundPathKey] = _currentBackgroundPath ?? string.Empty;
+            settings.Values[BackgroundModeKey] = _backgroundMode.ToString();
         }
 
         protected virtual void OnBackgroundChanged()

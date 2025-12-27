@@ -20,6 +20,8 @@ namespace MetroMarkdownEditor.ViewModels
 
         public event EventHandler<EditorNavigationRequest> NavigationRequested;
 
+        public RecentFileService RecentFilesService => _recentFiles;
+
         public ObservableCollection<RecentFileItem> RecentFiles
         {
             get { return _recentFiles.Items; }
@@ -36,6 +38,16 @@ namespace MetroMarkdownEditor.ViewModels
             _recentFiles.Items.Clear();
             await Task.Delay(100);
             await _recentFiles.InitializeAsync();
+        }
+
+        public bool AutoSaveEnabled
+        {
+            get { return Services.AutoSaveService.Instance.IsEnabled; }
+            set
+            {
+                Services.AutoSaveService.Instance.IsEnabled = value;
+                RaisePropertyChanged();
+            }
         }
 
         private void RequestNavigation(EditorLaunchMode mode, RecentFileItem recent = null)

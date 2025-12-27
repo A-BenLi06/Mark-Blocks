@@ -21,19 +21,6 @@ namespace MetroMarkdownEditor.Windows
                 // Set Theme as DataContext for the dark theme toggle
                 DataContext = locator.Theme;
                 _backgroundService = locator.Background;
-                
-                // Update Reset button visibility based on background state
-                UpdateResetButtonVisibility();
-            }
-        }
-
-        private void UpdateResetButtonVisibility()
-        {
-            if (ResetImageButton != null && _backgroundService != null)
-            {
-                ResetImageButton.Visibility = _backgroundService.UseCustomBackground 
-                    ? Visibility.Visible 
-                    : Visibility.Collapsed;
             }
         }
 
@@ -51,16 +38,8 @@ namespace MetroMarkdownEditor.Windows
             if (file != null && _backgroundService != null)
             {
                 await _backgroundService.SetBackgroundFromFileAsync(file);
-                UpdateResetButtonVisibility();
-            }
-        }
-
-        private void ResetBackground_Click(object sender, RoutedEventArgs e)
-        {
-            if (_backgroundService != null)
-            {
-                _backgroundService.ClearBackground();
-                UpdateResetButtonVisibility();
+                // Auto-switch to Custom mode
+                _backgroundService.BackgroundMode = MainPageBackgroundMode.Custom;
             }
         }
     }

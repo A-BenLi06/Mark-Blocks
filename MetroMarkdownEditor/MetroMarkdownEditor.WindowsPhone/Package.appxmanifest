@@ -3,7 +3,7 @@
   <Identity Name="e25b5fef-884c-4e0c-8fdb-81a720eeaae3" Publisher="CN=ben_l" Version="2.1.0.0" />
   <mp:PhoneIdentity PhoneProductId="e25b5fef-884c-4e0c-8fdb-81a720eeaae3" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
-    <DisplayName>MetroMarkdownEditor.WindowsPhone</DisplayName>
+    <DisplayName>Mark::Blocks</DisplayName>
     <PublisherDisplayName>ben_l</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -16,11 +16,30 @@
   </Resources>
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="MetroMarkdownEditor.WindowsPhone.App">
-      <m3:VisualElements DisplayName="MetroMarkdownEditor.WindowsPhone" Square150x150Logo="Assets\Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" Description="MetroMarkdownEditor.WindowsPhone" ForegroundText="light" BackgroundColor="transparent">
+      <m3:VisualElements DisplayName="Mark::Blocks" Square150x150Logo="Assets\Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" Description="Mark::Blocks" ForegroundText="light" BackgroundColor="transparent">
         <m3:DefaultTile Wide310x150Logo="Assets\WideLogo.png" Square71x71Logo="Assets\Square71x71Logo.png">
+          <m3:ShowNameOnTiles>
+            <m3:ShowOn Tile="square150x150Logo" />
+            <m3:ShowOn Tile="wide310x150Logo" />
+          </m3:ShowNameOnTiles>
         </m3:DefaultTile>
-        <m3:SplashScreen Image="Assets\SplashScreen.png" />
+        <m3:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="transparent" />
+        <m3:InitialRotationPreference>
+          <m3:Rotation Preference="portrait" />
+        </m3:InitialRotationPreference>
       </m3:VisualElements>
+      <Extensions>
+        <Extension Category="windows.fileTypeAssociation">
+          <FileTypeAssociation Name="markdown">
+            <DisplayName>Markdown File</DisplayName>
+            <SupportedFileTypes>
+              <FileType ContentType="text/markdown">.md</FileType>
+              <FileType ContentType="text/markdown">.markdown</FileType>
+              <FileType ContentType="text/plain">.txt</FileType>
+            </SupportedFileTypes>
+          </FileTypeAssociation>
+        </Extension>
+      </Extensions>
     </Application>
   </Applications>
   <Capabilities>

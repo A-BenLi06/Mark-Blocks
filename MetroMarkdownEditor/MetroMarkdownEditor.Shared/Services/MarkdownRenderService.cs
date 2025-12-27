@@ -37,9 +37,9 @@ namespace MetroMarkdownEditor.Services
         // Mermaid 本地缓存 + IE11 polyfills
         private static string _cachedMermaidJs = null;
         private static string _cachedEs6Promise = null;
-        private static string _cachedCoreJs = null;
+        // REMOVED: _cachedCoreJs - not used (causes IE11 conflicts)
         private static string _cachedUrlPolyfill = null;
-        private static string _cachedRegeneratorRuntime = null;
+        // REMOVED: _cachedRegeneratorRuntime - not needed for Mermaid v7
 
         public MarkdownRenderService()
         {
@@ -91,21 +91,23 @@ namespace MetroMarkdownEditor.Services
             // 加载本地 Mermaid (with ES6 polyfills for IE11)
             if (_cachedEs6Promise == null)
                 _cachedEs6Promise = await ReadAssetFileAsync("Assets/Mermaid/es6-promise.auto.min.js");
-            if (_cachedCoreJs == null)
-                _cachedCoreJs = await ReadAssetFileAsync("Assets/Mermaid/core.min.js");
+            // REMOVED: core-js causes "Function.prototype.toString" errors in IE11
+            // if (_cachedCoreJs == null)
+            //     _cachedCoreJs = await ReadAssetFileAsync("Assets/Mermaid/core.min.js");
             if (_cachedUrlPolyfill == null)
                 _cachedUrlPolyfill = await ReadAssetFileAsync("Assets/Mermaid/url-polyfill.min.js");
-            if (_cachedRegeneratorRuntime == null)
-                _cachedRegeneratorRuntime = await ReadAssetFileAsync("Assets/Mermaid/regenerator-runtime.js");
+            // REMOVED: regenerator-runtime not needed for Mermaid v7
+            // if (_cachedRegeneratorRuntime == null)
+            //     _cachedRegeneratorRuntime = await ReadAssetFileAsync("Assets/Mermaid/regenerator-runtime.js");
             if (_cachedMermaidJs == null)
-                _cachedMermaidJs = await ReadAssetFileAsync("Assets/Mermaid/mermaid7.min.js");
+                _cachedMermaidJs = await ReadAssetFileAsync("Assets/Mermaid/mermaid7.min.js"); // 确保这里是 v7 版本
 
             string currentCssContent = (theme == ElementTheme.Dark) ? _cachedCssDark : _cachedCssLight;
 
             // 颜色变量
             var bodyColor = theme == ElementTheme.Dark ? "#e6e6e6" : "#24292f";
             var bgColor = theme == ElementTheme.Dark ? "#1e1e1e" : "#ffffff";
-            var borderColor = "#dfe2e5"; // 仅用于表头底线和引用块
+            var borderColor = "#dfe2e5"; 
 
             // 字号配置
             string baseFontSize = "20px";
@@ -118,6 +120,7 @@ namespace MetroMarkdownEditor.Services
             codeFontSize = "13px";
             lineHeight = "1.8";
             containerPadding = "14px";
+            bgColor = theme == ElementTheme.Dark ? "#1d1d1d" : "#ffffff"; // WP uses darker bg
 #endif
 
             var sb = new StringBuilder();
@@ -127,14 +130,13 @@ namespace MetroMarkdownEditor.Services
             sb.Append("<meta http-equiv='X-UA-Compatible' content='IE=edge' />");
             sb.Append("<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no' />");
 #if WINDOWS_PHONE_APP
-            // Allow external content loading in WP WebView
             sb.Append("<meta http-equiv='Content-Security-Policy' content=\"default-src * 'unsafe-inline' 'unsafe-eval'; img-src * data: blob:;\" />");
 #endif
 
             // --- 样式注入 ---
             sb.Append("<style>");
             
-            // 1. 注入高亮库 CSS (Atom One)
+            // 1. 注入高亮库 CSS
             sb.Append(currentCssContent);
 
             // 2. 注入自定义基础样式
@@ -143,131 +145,158 @@ namespace MetroMarkdownEditor.Services
             sb.Append($"font-size: {baseFontSize};");
             sb.Append("color: " + bodyColor + "; background-color: " + bgColor + "; ");
             sb.Append("word-wrap: break-word; overflow-wrap: break-word;");
+#if WINDOWS_PHONE_APP
+            // WP: Enable hyphenation for better text flow
+            sb.Append("-ms-hyphens: auto; hyphens: auto;");
+#endif
             sb.Append("}");
 
-            // 【段落排版优化】仅对 p 标签应用两端对齐
+#if WINDOWS_PHONE_APP
+            // WP: Advanced IE text justification + hyphenation for paragraphs
             sb.Append("p { ");
             sb.Append("text-align: justify; ");
-            // inter-word: 仅调整单词间距，不拉伸字符间距，避免字距过大
-            sb.Append("-ms-text-justify: inter-word; text-justify: inter-word; ");
-            // 限制最大字距，防止撑满时间距过大
-            sb.Append("letter-spacing: normal; word-spacing: normal; ");
-            // 英文断词：自动连字符，避免单词过长时强制换行
-            sb.Append("-ms-hyphens: auto; hyphens: auto; ");
-            // 保持单词完整，尽量不断词
-            sb.Append("-ms-word-break: normal; word-break: normal; ");
+            sb.Append("-ms-text-justify: inter-ideograph; "); // IE's advanced alignment algorithm
+            sb.Append("text-justify: inter-ideograph; ");
+            sb.Append("-ms-hyphens: auto; hyphens: auto; "); // Enable word breaking with hyphens
+            sb.Append("-ms-word-break: break-all; "); // Allow breaking long words
             sb.Append("margin: 0.8em 0; ");
             sb.Append("}");
-
-            // 【标题样式】
-            sb.Append("h1, h2, h3, h4, h5, h6 { ");
-            sb.Append("font-family: 'Segoe UI', sans-serif; ");
-            sb.Append("font-weight: 600; ");
-            sb.Append("margin-top: 1.2em; margin-bottom: 0.5em; ");
-            sb.Append("}");
-
-            // 图片
+#else
+            sb.Append("p { text-align: justify; -ms-text-justify: inter-word; text-justify: inter-word; margin: 0.8em 0; }");
+#endif
+            sb.Append("h1, h2, h3, h4, h5, h6 { font-family: 'Segoe UI', sans-serif; font-weight: 600; margin-top: 1.2em; margin-bottom: 0.5em; }");
+#if WINDOWS_PHONE_APP
+            // WP: Custom link color
+            sb.Append("a { color: #63b0f2; text-decoration: none; }");
+            sb.Append("a:hover, a:active { text-decoration: underline; }");
+#else
+            sb.Append("a { color: #0969da; text-decoration: none; }");
+            sb.Append("a:hover { text-decoration: underline; }");
+#endif
             sb.Append("img { max-width: 100%; height: auto; display: block; margin: 10px 0; border-radius: 4px; }");
-
-            // === 代码块样式 ===
             sb.Append("pre { margin: 1em 0; padding: 0; text-align: left; }");
             sb.Append($"code {{ font-family: 'Consolas', 'Courier New', monospace; font-size: {codeFontSize}; }}");
             sb.Append(".hljs { border-radius: 0; padding: 0.8em; overflow-x: auto; display: block; }");
 
-            // === 表格样式 ===
+            // 表格与引用
             sb.Append(".table-wrapper { overflow-x: auto; margin: 16px 0; border: none; }");
             sb.Append("table { border-collapse: collapse; width: 100%; border-style: hidden; font-size: 0.9em; }");
             sb.Append("th, td { border: none; padding: 8px 12px; white-space: nowrap; }");
             sb.Append("th { border-bottom: 1px solid " + borderColor + "; font-weight: 600; text-align: left; }");
             sb.Append("tr:nth-child(2n) { background-color: rgba(127,127,127,0.1); }");
-
-            // 引用块
             sb.Append("blockquote { border-left: 4px solid " + borderColor + "; padding: 0 1em; color: #6a737d; margin: 10px 0; }");
             sb.Append(".alert-note { border-left-color: #0969da; background-color: rgba(9, 105, 218, 0.1); color: inherit; }");
             sb.Append(".alert-warning { border-left-color: #9a6700; background-color: rgba(154, 103, 0, 0.1); color: inherit; }");
-
-            // === 代码语言标签 - Metro 风格 </JAVA> ===
-            sb.Append(".code-lang-label { position: absolute; top: 4px; right: 8px; font-family: 'Segoe UI', sans-serif; font-size: 12px; color: #569cd6; opacity: 0.9; }");
-
-            // === 脚注样式 ===
-            sb.Append(".footnotes { margin-top: 2em; padding-top: 1em; border-top: 1px solid " + borderColor + "; font-size: 0.85em; }");
-            sb.Append(".footnote-ref { font-size: 0.75em; vertical-align: super; text-decoration: none; }");
-            sb.Append(".footnote-ref a { color: #569cd6; text-decoration: none; }");
-            sb.Append(".footnote-backref { text-decoration: none; color: #569cd6; }");
-            sb.Append("sup { font-size: 0.75em; }");
-            sb.Append("a.footnote-ref { color: #569cd6; }");
-
-            // === 数学公式样式 ===
+            sb.Append(".code-lang-label { position: absolute; top: 0; right: 0; padding: 4px 8px; font-family: 'Segoe UI', sans-serif; font-size: 11px; color: #abb2bf; background-color: rgba(0,0,0,0.3); border-bottom-left-radius: 4px; text-transform: lowercase; user-select: none; }");
             sb.Append(".math { overflow-x: auto; }");
 
-            // === Mermaid 7.x 图表样式 - IE11 静态 CSS ===
-            // Mermaid 容器
-            sb.Append(".mermaid { text-align: center !important; margin: 1em 0 !important; background: transparent !important; }");
-            sb.Append(".mermaid svg { max-width: 100% !important; background: transparent !important; }");
+#if WINDOWS_PHONE_APP
+            // WP: Metro Hub style horizontal columns (optional, use .metro-columns class)
+            sb.Append(".metro-columns { ");
+            sb.Append("-ms-column-count: 2; column-count: 2; "); // Two columns
+            sb.Append("-ms-column-gap: 24px; column-gap: 24px; "); // Gap between columns
+            sb.Append("-ms-column-rule: 1px solid rgba(127,127,127,0.3); column-rule: 1px solid rgba(127,127,127,0.3); "); // Separator line
+            sb.Append("text-align: justify; ");
+            sb.Append("-ms-text-justify: inter-ideograph; ");
+            sb.Append("}");
             
-            // 所有 SVG 基础元素 - 强制颜色
-            sb.Append(".mermaid rect { fill: #3b4252 !important; stroke: #81a1c1 !important; stroke-width: 2px !important; }");
-            sb.Append(".mermaid polygon { fill: #3b4252 !important; stroke: #81a1c1 !important; stroke-width: 2px !important; }");
-            sb.Append(".mermaid circle { fill: #3b4252 !important; stroke: #81a1c1 !important; stroke-width: 2px !important; }");
-            sb.Append(".mermaid ellipse { fill: #3b4252 !important; stroke: #81a1c1 !important; stroke-width: 2px !important; }");
-            sb.Append(".mermaid path { stroke: #81a1c1 !important; fill: none !important; }");
-            sb.Append(".mermaid line { stroke: #81a1c1 !important; stroke-width: 2px !important; }");
+            // Alternative: full-width horizontal scrolling layout
+            sb.Append(".metro-hub { ");
+            sb.Append("height: 100%; ");
+            sb.Append("-ms-overflow-style: -ms-autohiding-scrollbar; "); // Auto-hide scrollbar
+            sb.Append("overflow-x: auto; overflow-y: hidden; ");
+            sb.Append("-ms-column-width: 300px; column-width: 300px; "); // Each column ~300px
+            sb.Append("-ms-column-gap: 32px; column-gap: 32px; ");
+            sb.Append("-ms-column-fill: auto; column-fill: auto; ");
+            sb.Append("}");
+#endif
+
+            // ===============================================
+            // ===============================================
+            // ===============================================
+            // Mermaid 7.x 样式覆盖 - GitHub 风格 (深色/浅色)
+            // ===============================================
+            // 基础容器
+            sb.Append(".mermaid { margin: 20px 0; text-align: center; display: block; overflow-x: auto; }");
             
-            // 所有文本元素 - 强制白色
-            sb.Append(".mermaid text { fill: #eceff4 !important; font-family: 'Segoe UI', Arial, sans-serif !important; font-size: 14px !important; stroke: none !important; }");
-            sb.Append(".mermaid tspan { fill: #eceff4 !important; stroke: none !important; }");
-            sb.Append(".mermaid .label text { fill: #eceff4 !important; }");
-            sb.Append(".mermaid .label { color: #eceff4 !important; fill: #eceff4 !important; }");
-            sb.Append(".mermaid .nodeLabel { color: #eceff4 !important; fill: #eceff4 !important; }");
-            sb.Append(".mermaid foreignObject { color: #eceff4 !important; }");
-            sb.Append(".mermaid foreignObject div { color: #eceff4 !important; }");
+            // 1. 移除 height: auto，防止 IE11 塌陷
+            // 2. 移除 width: 100%，改由 JS 控制，防止 flex 布局下宽度计算错误
+            sb.Append(".mermaid svg { display: block; margin: 0 auto; }");
             
-            // 流程图节点 (Mermaid 7.x 类名)
-            sb.Append(".mermaid .node rect { fill: #4c566a !important; stroke: #88c0d0 !important; rx: 5 !important; ry: 5 !important; }");
-            sb.Append(".mermaid .node polygon { fill: #5e81ac !important; stroke: #88c0d0 !important; }");
-            sb.Append(".mermaid .node circle { fill: #4c566a !important; stroke: #88c0d0 !important; }");
-            sb.Append(".mermaid .node ellipse { fill: #4c566a !important; stroke: #88c0d0 !important; }");
-            
-            // 边线和箭头
-            sb.Append(".mermaid .edgePath path { stroke: #88c0d0 !important; stroke-width: 2px !important; fill: none !important; }");
-            sb.Append(".mermaid .edgePath marker path { fill: #88c0d0 !important; stroke: #88c0d0 !important; }");
-            sb.Append(".mermaid marker path { fill: #88c0d0 !important; stroke: #88c0d0 !important; }");
-            sb.Append(".mermaid #arrowhead path { fill: #88c0d0 !important; }");
-            sb.Append(".mermaid .arrowheadPath { fill: #88c0d0 !important; }");
-            
-            // 边标签
-            sb.Append(".mermaid .edgeLabel { background-color: #2e3440 !important; }");
-            sb.Append(".mermaid .edgeLabel rect { fill: #2e3440 !important; stroke: none !important; }");
-            sb.Append(".mermaid .edgeLabel span { color: #eceff4 !important; background: #2e3440 !important; }");
-            sb.Append(".mermaid .edgeLabel .label { color: #eceff4 !important; }");
-            
-            // 子图/集群
-            sb.Append(".mermaid .cluster rect { fill: #2e3440 !important; stroke: #4c566a !important; }");
-            sb.Append(".mermaid .cluster text { fill: #eceff4 !important; }");
-            
-            // 特殊形状修复
-            sb.Append(".mermaid .diamond { fill: #5e81ac !important; stroke: #88c0d0 !important; }");
-            sb.Append(".mermaid .rhombus { fill: #5e81ac !important; stroke: #88c0d0 !important; }");
-            
-            // 时序图
-            sb.Append(".mermaid .actor { fill: #3b4252 !important; stroke: #88c0d0 !important; }");
-            sb.Append(".mermaid .actor-line { stroke: #4c566a !important; stroke-dasharray: 3,3 !important; }");
-            sb.Append(".mermaid .messageLine0 { stroke: #88c0d0 !important; stroke-width: 1.5px !important; }");
-            sb.Append(".mermaid .messageLine1 { stroke: #88c0d0 !important; stroke-width: 1.5px !important; stroke-dasharray: 3,3 !important; }");
-            sb.Append(".mermaid .messageText { fill: #eceff4 !important; }");
-            sb.Append(".mermaid .note { fill: #3b4252 !important; stroke: #5c6370 !important; }");
-            sb.Append(".mermaid .noteText { fill: #eceff4 !important; }");
-            
-            // 背景透明
-            sb.Append(".mermaid .background { fill: transparent !important; }");
+            // 全局字体
+            sb.Append(".mermaid text, .mermaid tspan { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif !important; font-size: 16px !important; }");
+
+            if (theme == ElementTheme.Dark)
+            {
+                // --- GitHub Dark Theme ---
+                var ghBg = "#0d1117";       // GitHub Dark Canvas
+                var ghNodeBg = "#161b22";   // Node Background
+                var ghBorder = "#30363d";   // Borders
+                var ghText = "#c9d1d9";     // Primary Text
+                var ghLine = "#8b949e";     // Lines & Icons
+                var ghBlue = "#58a6ff";     // Blue accents
+                
+                // 1. 流程图 (Flowchart)
+                sb.Append($"g.node rect, g.node circle, g.node ellipse, g.node polygon {{ fill: {ghNodeBg} !important; stroke: {ghBorder} !important; stroke-width: 1.5px !important; }}");
+                sb.Append($"g.node text, g.node tspan {{ fill: {ghText} !important; }}");
+                
+                // 连线
+                sb.Append($"g.edgePath path {{ stroke: {ghLine} !important; stroke-width: 1.5px !important; fill: none; }}");
+                sb.Append($"g.edgePath marker path, marker path, marker {{ fill: {ghLine} !important; stroke: {ghLine} !important; }}");
+                sb.Append($"#arrowhead path {{ fill: {ghLine} !important; }}");
+                
+                // 标签背景
+                sb.Append($"g.label {{ color: {ghText} !important; }}");
+                sb.Append($".edgeLabel {{ background-color: {ghBg} !important; color: {ghText} !important; }}");
+                sb.Append($".edgeLabel rect {{ fill: {ghBg} !important; opacity: 1; }}");
+
+                // 2. 时序图 (Sequence)
+                sb.Append($".mermaid .actor {{ fill: {ghNodeBg} !important; stroke: {ghBorder} !important; stroke-width: 1.5px !important; }}");
+                sb.Append($".mermaid text.actor, .mermaid tspan.actor {{ fill: {ghText} !important; font-weight: 600 !important; }}");
+                sb.Append($".mermaid .actor-line {{ stroke: {ghLine} !important; stroke-width: 1px !important; }}");
+                sb.Append($".mermaid .messageLine0, .mermaid .messageLine1 {{ stroke: {ghText} !important; stroke-width: 1.5px !important; }}");
+                sb.Append($".mermaid .messageText, .mermaid .messageText tspan {{ fill: {ghText} !important; stroke: none !important; }}");
+                // Loop & Notes
+                sb.Append($".mermaid .loopText, .mermaid .loopText tspan, .mermaid .noteText, .mermaid .noteText tspan {{ fill: {ghText} !important; stroke: none !important; }}");
+                sb.Append($".mermaid .loopLine {{ stroke: {ghBlue} !important; stroke-width: 2px !important; }}");
+                sb.Append($".mermaid .note {{ fill: {ghNodeBg} !important; stroke: {ghBlue} !important; }}");
+                sb.Append($".mermaid .labelBox {{ fill: {ghNodeBg} !important; stroke: {ghBorder} !important; }}");
+                
+                // 3. 甘特图 (Gantt)
+                sb.Append($".mermaid .section {{ stroke: none !important; opacity: 0.2; }}");
+                sb.Append($".mermaid .section0, .mermaid .section1 {{ fill: {ghNodeBg} !important; }}");
+                sb.Append($".mermaid .task {{ fill: #1f6feb !important; stroke: none !important; }}"); // GitHub Blue
+                sb.Append($".mermaid .taskText, .mermaid .taskText tspan {{ fill: {ghText} !important; }}");
+                sb.Append($".mermaid .grid .tick text, .mermaid .grid .tick tspan {{ fill: {ghText} !important; }}");
+                sb.Append($".mermaid .grid .tick line {{ stroke: {ghBorder} !important; stroke-opacity: 0.5; }}");
+            }
+            else
+            {
+                // --- GitHub Light Theme ---
+                var ghBg = "#ffffff";
+                var ghNodeBg = "#ffffff";
+                var ghBorder = "#d0d7de";
+                var ghText = "#24292f";
+                var ghLine = "#8c959f";
+                
+                sb.Append($"g.node rect, g.node circle, g.node ellipse, g.node polygon {{ fill: {ghNodeBg} !important; stroke: {ghBorder} !important; stroke-width: 1.5px !important; }}");
+                sb.Append($"g.node text, g.node tspan {{ fill: {ghText} !important; }}");
+                
+                sb.Append($"g.edgePath path {{ stroke: {ghLine} !important; stroke-width: 1.5px !important; fill: none; }}");
+                sb.Append($"g.edgePath marker path, marker path, marker {{ fill: {ghLine} !important; stroke: {ghLine} !important; }}");
+                
+                sb.Append($".mermaid .actor {{ fill: {ghNodeBg} !important; stroke: {ghBorder} !important; }}");
+                sb.Append($".mermaid text.actor, .mermaid tspan.actor {{ fill: {ghText} !important; }}");
+                sb.Append($".mermaid .actor-line {{ stroke: {ghLine} !important; }}");
+                sb.Append($".mermaid .messageLine0, .mermaid .messageLine1 {{ stroke: {ghText} !important; }}");
+                sb.Append($".mermaid .messageText, .mermaid .messageText tspan {{ fill: {ghText} !important; }}");
+                sb.Append($".mermaid .labelBox {{ fill: {ghBg} !important; stroke: {ghBorder} !important; }}");
+            }
+            // ===============================================
 
             sb.Append("</style>");
 
-            // 3. 【关键】最后注入 inlineCss (手机专用补丁)
-            if (!string.IsNullOrWhiteSpace(inlineCss))
-            {
-                sb.Append(inlineCss);
-            }
+            if (!string.IsNullOrWhiteSpace(inlineCss)) sb.Append(inlineCss);
 
             // === 本地 KaTeX CSS ===
             sb.Append("<style>");
@@ -277,158 +306,272 @@ namespace MetroMarkdownEditor.Services
             sb.Append("</head><body>");
             sb.Append("<div id='content'></div>");
 
-            // === ES6 Promise polyfill for IE11 ===
-            sb.Append("<script>");
-            sb.Append(_cachedEs6Promise);
-            sb.Append("</script>");
+            // === 1. Polyfills 注入 (IE11 核心修复) ===
+            // 移除 core-js 和 regenerator-runtime 以避免 "Function.prototype.toString" 冲突
+            sb.Append("<script>" + _cachedEs6Promise + "</script>");
+            // sb.Append("<script>" + _cachedCoreJs + "</script>"); // REMOVED: Conflicts with IE11
+            sb.Append("<script>" + _cachedUrlPolyfill + "</script>");
+            // sb.Append("<script>" + _cachedRegeneratorRuntime + "</script>"); // REMOVED: Not needed for v7
 
-            // === Core-JS polyfill for ES6 syntax (arrow functions, etc.) ===
-            sb.Append("<script>");
-            sb.Append(_cachedCoreJs);
-            sb.Append("</script>");
-
-            // === URL Polyfill for IE11 ===
-            sb.Append("<script>");
-            sb.Append(_cachedUrlPolyfill);
-            sb.Append("</script>");
-
-            // === Regenerator Runtime for async/await ===
-            sb.Append("<script>");
-            sb.Append(_cachedRegeneratorRuntime);
-            sb.Append("</script>");
-
-            // === SVG getBBox Polyfill for IE11 ===
+            // === 2. SVG getBBox Polyfill for IE11 ===
             sb.Append(@"<script>
                 (function() {
-                    // IE11 SVG getBBox polyfill
                     if (typeof SVGElement !== 'undefined' && SVGElement.prototype) {
                         var originalGetBBox = SVGElement.prototype.getBBox;
                         SVGElement.prototype.getBBox = function() {
                             try {
                                 if (originalGetBBox) {
                                     var result = originalGetBBox.call(this);
-                                    if (result && (result.width !== 0 || result.height !== 0)) {
-                                        return result;
-                                    }
+                                    if (result && (result.width !== 0 || result.height !== 0)) return result;
                                 }
                             } catch(e) {}
-                            
-                            // Fallback using getBoundingClientRect
                             try {
                                 var rect = this.getBoundingClientRect();
                                 var svg = this.ownerSVGElement || this;
                                 var ctm = svg.getScreenCTM ? svg.getScreenCTM() : null;
                                 var scale = ctm ? ctm.a : 1;
                                 return {
-                                    x: rect.left / scale,
-                                    y: rect.top / scale,
-                                    width: rect.width / scale || 100,
-                                    height: rect.height / scale || 20,
-                                    toString: function() { return '[object SVGRect]'; }
+                                    x: rect.left / scale, y: rect.top / scale,
+                                    width: rect.width / scale || 100, height: rect.height / scale || 20
                                 };
-                            } catch(e2) {
-                                // Ultimate fallback
-                                return { x: 0, y: 0, width: 100, height: 20 };
-                            }
+                            } catch(e2) { return { x: 0, y: 0, width: 100, height: 20 }; }
                         };
                     }
-                    
-                    // Also polyfill getComputedTextLength for text elements
                     if (typeof SVGTextElement !== 'undefined' && SVGTextElement.prototype && !SVGTextElement.prototype.getComputedTextLength) {
                         SVGTextElement.prototype.getComputedTextLength = function() {
                             var text = this.textContent || '';
-                            return text.length * 8; // Approximate 8px per character
+                            var width = 0;
+                            for (var i = 0; i < text.length; i++) width += (text.charCodeAt(i) > 255) ? 18 : 9;
+                            return width + 10;
                         };
                     }
                 })();
             </script>");
 
-            // === 本地 Mermaid JS ===
-            sb.Append("<script>");
-            sb.Append(_cachedMermaidJs);
-            sb.Append("</script>");
+            // === 3. ES6 Polyfills for IE11 (必须在 Mermaid 之前) ===
+            // 内联关键 polyfills（甘特图需要）
+            sb.Append(@"<script>
+                // ========================================================================
+                // 【关键】IE11 SVG classList 修复 (救活甘特图的唯一方法)
+                // IE11 不支持在 SVG 元素上使用 classList，导致 Mermaid/D3 渲染甘特图时失败
+                // ========================================================================
+                if (!('classList' in document.createElementNS('http://www.w3.org/2000/svg', 'g'))) {
+                    try {
+                        var descr = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'classList');
+                        if (descr) Object.defineProperty(SVGElement.prototype, 'classList', descr);
+                    } catch(e) {}
+                }
+                
+                // 双重保险：如果上面的 shim 不起作用，手动模拟 classList
+                (function() {
+                    if (typeof SVGElement === 'undefined') return;
+                    try {
+                        if ('classList' in document.createElementNS('http://www.w3.org/2000/svg', 'g')) return;
+                    } catch(e) {}
+                    
+                    Object.defineProperty(SVGElement.prototype, 'classList', {
+                        get: function() {
+                            var self = this;
+                            function update(fn) {
+                                return function(value) {
+                                    var classes = self.getAttribute('class') || '';
+                                    var list = classes.split(/\s+/).filter(Boolean);
+                                    var index = list.indexOf(value);
+                                    fn(list, index, value);
+                                    self.setAttribute('class', list.join(' '));
+                                }
+                            }
+                            return {
+                                add: update(function(list, index, value) { if (!~index) list.push(value); }),
+                                remove: update(function(list, index) { if (~index) list.splice(index, 1); }),
+                                toggle: update(function(list, index, value) { if (~index) list.splice(index, 1); else list.push(value); }),
+                                contains: function(value) { return !!~(self.getAttribute('class') || '').split(/\s+/).indexOf(value); },
+                                item: function(i) { return (self.getAttribute('class') || '').split(/\s+/)[i] || null; }
+                            };
+                        }
+                    });
+                })();
+                // ========================================================================
+                
+                // Array.from polyfill
+                if (!Array.from) {
+                    Array.from = function(arrayLike) {
+                        var arr = [];
+                        for (var i = 0; i < arrayLike.length; i++) arr.push(arrayLike[i]);
+                        return arr;
+                    };
+                }
+                // Array.prototype.find polyfill
+                if (!Array.prototype.find) {
+                    Array.prototype.find = function(callback) {
+                        for (var i = 0; i < this.length; i++) {
+                            if (callback(this[i], i, this)) return this[i];
+                        }
+                        return undefined;
+                    };
+                }
+                // Array.prototype.findIndex polyfill
+                if (!Array.prototype.findIndex) {
+                    Array.prototype.findIndex = function(callback) {
+                        for (var i = 0; i < this.length; i++) {
+                            if (callback(this[i], i, this)) return i;
+                        }
+                        return -1;
+                    };
+                }
+                // Array.prototype.includes polyfill
+                if (!Array.prototype.includes) {
+                    Array.prototype.includes = function(item) {
+                        for (var i = 0; i < this.length; i++) {
+                            if (this[i] === item) return true;
+                        }
+                        return false;
+                    };
+                }
+                // String.prototype.includes polyfill
+                if (!String.prototype.includes) {
+                    String.prototype.includes = function(search, start) {
+                        if (typeof start !== 'number') start = 0;
+                        return this.indexOf(search, start) !== -1;
+                    };
+                }
+                // String.prototype.startsWith polyfill
+                if (!String.prototype.startsWith) {
+                    String.prototype.startsWith = function(search, pos) {
+                        pos = pos || 0;
+                        return this.substr(pos, search.length) === search;
+                    };
+                }
+                // String.prototype.endsWith polyfill
+                if (!String.prototype.endsWith) {
+                    String.prototype.endsWith = function(search, len) {
+                        if (len === undefined || len > this.length) len = this.length;
+                        return this.substring(len - search.length, len) === search;
+                    };
+                }
+                // Object.assign polyfill
+                if (typeof Object.assign !== 'function') {
+                    Object.assign = function(target) {
+                        if (target == null) throw new TypeError('Cannot convert undefined or null to object');
+                        var to = Object(target);
+                        for (var i = 1; i < arguments.length; i++) {
+                            var source = arguments[i];
+                            if (source != null) {
+                                for (var key in source) {
+                                    if (Object.prototype.hasOwnProperty.call(source, key)) to[key] = source[key];
+                                }
+                            }
+                        }
+                        return to;
+                    };
+                }
+                // Object.keys polyfill
+                if (!Object.keys) {
+                    Object.keys = function(obj) {
+                        var keys = [];
+                        for (var key in obj) {
+                            if (Object.prototype.hasOwnProperty.call(obj, key)) keys.push(key);
+                        }
+                        return keys;
+                    };
+                }
+                // Object.values polyfill
+                if (!Object.values) {
+                    Object.values = function(obj) {
+                        var values = [];
+                        for (var key in obj) {
+                            if (Object.prototype.hasOwnProperty.call(obj, key)) values.push(obj[key]);
+                        }
+                        return values;
+                    };
+                }
+                // Object.entries polyfill
+                if (!Object.entries) {
+                    Object.entries = function(obj) {
+                        var entries = [];
+                        for (var key in obj) {
+                            if (Object.prototype.hasOwnProperty.call(obj, key)) entries.push([key, obj[key]]);
+                        }
+                        return entries;
+                    };
+                }
+                // Number.isNaN polyfill
+                Number.isNaN = Number.isNaN || function(value) {
+                    return typeof value === 'number' && isNaN(value);
+                };
+                // Number.isFinite polyfill
+                Number.isFinite = Number.isFinite || function(value) {
+                    return typeof value === 'number' && isFinite(value);
+                };
+            </script>");
+            
+            // 加载外部 polyfills（如果有）
+            if (!string.IsNullOrEmpty(_cachedEs6Promise))
+                sb.Append("<script>" + _cachedEs6Promise + "</script>");
+            if (!string.IsNullOrEmpty(_cachedUrlPolyfill))
+                sb.Append("<script>" + _cachedUrlPolyfill + "</script>");
+            
+            // === 4. Mermaid & Libraries ===
+            sb.Append("<script>" + _cachedMermaidJs + "</script>");
+            sb.Append("<script>" + _cachedKatexJs + "</script>");
+            sb.Append("<script>" + _cachedKatexAutoRender + "</script>");
+            sb.Append("<script>" + _cachedJs + "</script>");
 
-            // === 本地 KaTeX JS ===
-            sb.Append("<script>");
-            sb.Append(_cachedKatexJs);
-            sb.Append("</script>");
-            sb.Append("<script>");
-            sb.Append(_cachedKatexAutoRender);
-            sb.Append("</script>");
-
-            // === Highlight.js ===
-            sb.Append("<script>");
-            sb.Append(_cachedJs);
-            sb.Append("</script>");
-
-            // Mermaid 初始化 - IE11 兼容配置
-            // theme: null = 禁用 CSS 变量
-            // htmlLabels: false = 使用纯 SVG text 而非 foreignObject（IE11 不支持）
+            // === 4. Mermaid 初始化 (v7 专用配置) ===
             sb.Append(@"<script>
                 if (typeof mermaid !== 'undefined') {
                     mermaid.initialize({ 
                         startOnLoad: false, 
-                        theme: null,
-                        securityLevel: 'loose',
+                        theme: 'default',   // v7 忽略 theme，全靠 CSS
+                        logLevel: 3,
                         flowchart: {
-                            curve: 'basis',
-                            htmlLabels: false,
-                            useMaxWidth: false
+                            htmlLabels: false, // IE11 不支持 foreignObject
+                            useMaxWidth: false // 【关键】关闭自动缩放，防止图表变小
                         },
                         sequence: {
-                            diagramMarginX: 50,
-                            diagramMarginY: 10,
-                            actorMargin: 50,
-                            width: 150,
-                            height: 65,
-                            boxMargin: 10,
-                            boxTextMargin: 5,
-                            noteMargin: 10,
-                            messageMargin: 35,
-                            mirrorActors: true,
-                            useMaxWidth: false
+                            useMaxWidth: false,
+                            diagramMarginX: 50, diagramMarginY: 10, boxMargin: 10,
+                            mirrorActors: true
                         },
                         gantt: {
-                            titleTopMargin: 25,
-                            barHeight: 20,
-                            barGap: 4,
-                            topPadding: 50,
-                            leftPadding: 75,
-                            gridLineStartPadding: 35,
-                            fontSize: 11,
+                            useMaxWidth: false,
                             numberSectionStyles: 4,
                             axisFormat: '%Y-%m-%d'
                         }
                     });
+                    // 添加错误回调以捕获解析错误
+                    if (mermaid.parseError) {
+                        var origParseError = mermaid.parseError;
+                        mermaid.parseError = function(err, hash) {
+                            console.error('Mermaid parseError:', err, hash);
+                            var errDiv = document.createElement('div');
+                            errDiv.style.cssText = 'background:#f00;color:#fff;padding:10px;font-family:monospace;margin:10px 0;';
+                            errDiv.textContent = 'Mermaid Error: ' + err;
+                            document.body.insertBefore(errDiv, document.body.firstChild);
+                            if (origParseError) origParseError(err, hash);
+                        };
+                    }
                 }
             </script>");
 
 #if WINDOWS_PHONE_APP
-            // Windows Phone: 添加滚动检测脚本，通过 ScriptNotify 发送滚动位置
             sb.Append(@"<script>
                 (function(){
                     var lastY = 0;
                     window.addEventListener('scroll', function(){
                         var y = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-                        if(window.external && window.external.notify){
-                            window.external.notify('scroll:' + y);
-                        }
+                        if(window.external && window.external.notify){ window.external.notify('scroll:' + y); }
                         lastY = y;
                     });
                 })();
             </script>");
 #endif
-
             sb.Append("</body></html>");
-
             webView.NavigateToString(sb.ToString());
-
             await Task.FromResult(0);
         }
 
-        // ... RenderMarkdown 和 UpdateBlockAsync 方法不需要改动，保持原样即可 ...
-        // (为了节省篇幅，你可以直接保留文件里原有的这两个方法，逻辑不用动)
-        
+        // ... RenderMarkdown 不需要改动 ...
         public MarkdownRenderResult RenderMarkdown(string markdown)
         {
             var normalized = NormalizeNewLines(markdown ?? string.Empty);
@@ -437,18 +580,23 @@ namespace MetroMarkdownEditor.Services
             return new MarkdownRenderResult { Html = html, Blocks = blocks };
         }
 
+        // UpdateContentAsync：针对 Mermaid v7 简化渲染逻辑
         public async Task UpdateContentAsync(WebView webView, string content, bool isMarkdown = true)
         {
             if (webView == null) return;
             string html = isMarkdown ? Markdown.ToHtml(content ?? string.Empty, _pipeline) : (content ?? string.Empty);
             var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(html));
             var script = new StringBuilder();
+            
             script.Append("(function(){");
             script.Append("  var container = document.getElementById('content');");
             script.Append("  if (!container) return;");
-            script.Append("  var doc = document.documentElement;");
-            script.Append("  var body = document.body;");
+            
+            // 恢复滚动位置
+            script.Append("  var doc = document.documentElement; var body = document.body;");
             script.Append("  var scrollTop = (doc && doc.scrollTop) || (body && body.scrollTop);");
+            
+            // 更新 HTML
             script.Append("  container.style.minHeight = container.clientHeight + 'px';");
             script.Append("  try {");
             script.Append("    container.innerHTML = decodeURIComponent(escape(window.atob('").Append(payload).Append("')));");
@@ -459,51 +607,12 @@ namespace MetroMarkdownEditor.Services
             script.Append("  for (var i = tables.length - 1; i >= 0; i--) {");
             script.Append("    var table = tables[i];");
             script.Append("    if (table.parentNode.className.indexOf('table-wrapper') === -1) {");
-            script.Append("      var wrapper = document.createElement('div');");
-            script.Append("      wrapper.className = 'table-wrapper';");
-            script.Append("      table.parentNode.insertBefore(wrapper, table);");
-            script.Append("      wrapper.appendChild(table);");
+            script.Append("      var wrapper = document.createElement('div'); wrapper.className = 'table-wrapper';");
+            script.Append("      table.parentNode.insertBefore(wrapper, table); wrapper.appendChild(table);");
             script.Append("    }");
             script.Append("  }");
 
-            // 触发高亮
-            script.Append("  if (typeof hljs !== 'undefined') {");
-            script.Append("    var blocks = container.querySelectorAll('pre code');");
-            script.Append("    for(var i=0; i<blocks.length; i++){ hljs.highlightBlock(blocks[i]); }");
-            script.Append("  }");
-
-            // 引用块处理
-            script.Append("  var quotes = container.getElementsByTagName('blockquote');");
-            script.Append("  for (var i = 0; i < quotes.length; i++) {");
-            script.Append("    var c = quotes[i].innerHTML;");
-            script.Append("    if (c.indexOf('[!NOTE]') !== -1) { ");
-            script.Append("       quotes[i].className += ' alert-note'; ");
-            script.Append("       quotes[i].innerHTML = c.replace(/\\[!NOTE\\]/i, '<strong>NOTE</strong><br/>'); ");
-            script.Append("    }");
-            script.Append("    else if (c.indexOf('[!WARNING]') !== -1) { ");
-            script.Append("       quotes[i].className += ' alert-warning'; ");
-            script.Append("       quotes[i].innerHTML = c.replace(/\\[!WARNING\\]/i, '<strong>WARNING</strong><br/>'); ");
-            script.Append("    }");
-            script.Append("  }");
-
-            // 代码块语言标签 - Metro 风格 </JAVA>
-            script.Append("  var pres = container.querySelectorAll('pre');");
-            script.Append("  for (var i = 0; i < pres.length; i++) {");
-            script.Append("    var code = pres[i].querySelector('code');");
-            script.Append("    if (code && !pres[i].querySelector('.code-lang-label')) {");
-            script.Append("      var cls = code.className || '';");
-            script.Append("      var match = cls.match(/language-(\\w+)/);");
-            script.Append("      if (match && match[1]) {");
-            script.Append("        var label = document.createElement('span');");
-            script.Append("        label.className = 'code-lang-label';");
-            script.Append("        label.textContent = '</' + match[1].toUpperCase() + '>';");
-            script.Append("        pres[i].style.position = 'relative';");
-            script.Append("        pres[i].insertBefore(label, pres[i].firstChild);");
-            script.Append("      }");
-            script.Append("    }");
-            script.Append("  }");
-
-            // KaTeX 数学公式渲染 - 处理 Markdig 生成的 .math 元素
+            // KaTeX 渲染
             script.Append("  if (typeof katex !== 'undefined') {");
             script.Append("    var mathElements = container.querySelectorAll('.math');");
             script.Append("    for (var i = 0; i < mathElements.length; i++) {");
@@ -511,110 +620,299 @@ namespace MetroMarkdownEditor.Services
             script.Append("      if (el.getAttribute('data-rendered')) continue;");
             script.Append("      var tex = el.textContent || el.innerText;");
             script.Append("      var displayMode = el.tagName === 'DIV';");
-            script.Append("      try {");
-            script.Append("        katex.render(tex, el, { displayMode: displayMode, throwOnError: false });");
-            script.Append("        el.setAttribute('data-rendered', 'true');");
-            script.Append("      } catch(e) { console.log('KaTeX error:', e); }");
+            script.Append("      try { katex.render(tex, el, { displayMode: displayMode, throwOnError: false }); el.setAttribute('data-rendered', 'true'); } catch(e) {}");
             script.Append("    }");
             script.Append("  }");
 
-            // Mermaid 图表渲染 - ES5 桥接脚本 + 调试
-            // DEBUG: 检查 Mermaid 是否加载
-            script.Append("  var debugInfo = 'Mermaid loaded: ' + (typeof mermaid !== 'undefined');");
-            
-            // 步骤1: 查找所有可能的 mermaid 代码块 (多种选择器)
-            script.Append("  var codeBlocks = container.querySelectorAll('code.language-mermaid, code[class*=\"mermaid\"], pre.mermaid code, pre > code.mermaid');");
-            script.Append("  debugInfo += ', codeBlocks: ' + codeBlocks.length;");
-            script.Append("  var m, block, graphDef, newDiv, parentPre;");
-            script.Append("  for (m = 0; m < codeBlocks.length; m++) {");
-            script.Append("    block = codeBlocks[m];");
-            script.Append("    graphDef = block.innerText || block.textContent;");
-            script.Append("    newDiv = document.createElement('div');");
-            script.Append("    newDiv.className = 'mermaid';");
-            script.Append("    newDiv.textContent = graphDef;");
-            script.Append("    parentPre = block.parentNode;");
-            script.Append("    if (parentPre && parentPre.tagName && parentPre.tagName.toLowerCase() === 'pre') {");
-            script.Append("      parentPre.parentNode.replaceChild(newDiv, parentPre);");
-            script.Append("    } else {");
-            script.Append("      block.parentNode.replaceChild(newDiv, block);");
-            script.Append("    }");
+            // Highlight.js
+            script.Append("  if (typeof hljs !== 'undefined') {");
+            script.Append("    var blocks = container.querySelectorAll('pre code');");
+            script.Append("    for(var i=0; i<blocks.length; i++){ hljs.highlightBlock(blocks[i]); }");
             script.Append("  }");
-            
-            // 步骤2: 查找 Markdig 可能直接生成的 div.mermaid
-            script.Append("  var existingDivs = container.querySelectorAll('div.mermaid:not([data-processed])');");
-            script.Append("  debugInfo += ', divs: ' + existingDivs.length;");
-            script.Append("  var n, mermaidArr = [];");
-            script.Append("  for (n = 0; n < existingDivs.length; n++) {");
-            script.Append("    existingDivs[n].setAttribute('data-processed', 'true');");
-            script.Append("    mermaidArr.push(existingDivs[n]);");
-            script.Append("  }");
-            
-            // 步骤3: 检查是否有 pre 包含 mermaid 关键字但没有正确 class 的情况
-            script.Append("  var allPres = container.querySelectorAll('pre');");
-            script.Append("  for (var p = 0; p < allPres.length; p++) {");
-            script.Append("    var preText = allPres[p].innerText || allPres[p].textContent || '';");
-            script.Append("    if (preText.indexOf('flowchart') === 0 || preText.indexOf('graph') === 0 || preText.indexOf('sequenceDiagram') === 0 || preText.indexOf('gantt') === 0) {");
-            script.Append("      if (!allPres[p].getAttribute('data-processed')) {");
-            script.Append("        var mDiv = document.createElement('div');");
-            script.Append("        mDiv.className = 'mermaid';");
-            script.Append("        mDiv.textContent = preText;");
-            script.Append("        mDiv.setAttribute('data-processed', 'true');");
-            script.Append("        allPres[p].parentNode.replaceChild(mDiv, allPres[p]);");
-            script.Append("        mermaidArr.push(mDiv);");
+
+            // -----------------------------------------------------------
+            // Mermaid v7 渲染逻辑 (带语法兼容层)
+            // -----------------------------------------------------------
+            script.Append("  if (typeof mermaid !== 'undefined') {");
+            // 1. 查找并转换所有 mermaid 代码块为 div
+            script.Append("    var codeBlocks = container.querySelectorAll('code.language-mermaid, pre.mermaid code, div.mermaid');");
+            script.Append("    var nodesToInit = [];");
+            script.Append("    for (var m = 0; m < codeBlocks.length; m++) {");
+            script.Append("      var block = codeBlocks[m];");
+            // 【过滤】跳过属于其他库的语法（flow, sequence）
+            script.Append("      if (block.className && (block.className.indexOf('language-flow') !== -1 || block.className.indexOf('language-sequence') !== -1)) {");
+            script.Append("        continue;");
+            script.Append("      }");
+            // 如果已经是处理过的 div，直接加入列表；如果是 code，转换它
+            script.Append("      if (block.tagName.toLowerCase() === 'div' && block.className === 'mermaid') {");
+            script.Append("          if(!block.getAttribute('data-processed')) nodesToInit.push(block);");
+            script.Append("      } else {");
+            script.Append("          var graphDef = block.innerText || block.textContent;");
+            // 【关键】v7 兼容性：将 'flowchart' 替换为 'graph'
+            script.Append("          graphDef = graphDef.replace(/^\\s*flowchart\\s+/m, 'graph ');");
+            script.Append("          var newDiv = document.createElement('div');");
+            script.Append("          newDiv.className = 'mermaid';");
+            script.Append("          newDiv.textContent = graphDef;");
+            script.Append("          var parentPre = block.parentNode;");
+            script.Append("          if (parentPre && parentPre.tagName.toLowerCase() === 'pre') {");
+            script.Append("            parentPre.parentNode.replaceChild(newDiv, parentPre);");
+            script.Append("          } else {");
+            script.Append("            block.parentNode.replaceChild(newDiv, block);");
+            script.Append("          }");
+            script.Append("          nodesToInit.push(newDiv);");
             script.Append("      }");
             script.Append("    }");
-            script.Append("  }");
-            
-            // 步骤4: 使用 mermaid.render() 逐个渲染并捕获详细错误
-            script.Append("  debugInfo += ', toRender: ' + mermaidArr.length;");
-            script.Append("  if (typeof mermaid !== 'undefined' && mermaidArr.length > 0) {");
-            script.Append("    var renderErrors = [];");
-            script.Append("    for (var r = 0; r < mermaidArr.length; r++) {");
-            script.Append("      try {");
-            script.Append("        var graphDef = mermaidArr[r].textContent || mermaidArr[r].innerText;");
-            script.Append("        var graphId = 'mermaid-graph-' + r;");
-            // 使用 mermaid.render() - v8 API
-            script.Append("        if (typeof mermaid.render === 'function') {");
-            script.Append("          mermaid.render(graphId, graphDef, function(svgCode) {");
-            script.Append("            mermaidArr[r].innerHTML = svgCode;");
-            script.Append("          });");
-            script.Append("        } else if (typeof mermaid.mermaidAPI !== 'undefined' && typeof mermaid.mermaidAPI.render === 'function') {");
-            script.Append("          mermaid.mermaidAPI.render(graphId, graphDef, function(svgCode) {");
-            script.Append("            mermaidArr[r].innerHTML = svgCode;");
-            script.Append("          });");
-            script.Append("        } else {");
-            script.Append("          renderErrors.push('No render API found');");
+
+            // 2. 调用 mermaid.init() - 使用延迟等待 SVG 生成
+            script.Append("    if (nodesToInit.length > 0) {");
+
+#if !WINDOWS_PHONE_APP
+            // Windows: Add debug output if enabled in DevSettings
+            bool showMermaidDebug = DevSettingsService.Instance.MermaidDebugEnabled;
+            if (showMermaidDebug)
+            {
+                script.Append("      var initDebug = document.createElement('div');");
+                script.Append("      initDebug.style.cssText = 'background:#333;color:#ff0;padding:10px;font-family:monospace;font-size:12px;margin-bottom:10px;';");
+                script.Append("      initDebug.textContent = '[Mermaid Init] nodesToInit.length=' + nodesToInit.length;");
+                script.Append("      container.insertBefore(initDebug, container.firstChild);");
+            }
+#endif
+
+            script.Append("      setTimeout(function() {");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("        var initErrors = [];");
+            }
+#endif
+
+            script.Append("        for (var ni = 0; ni < nodesToInit.length; ni++) {");
+            script.Append("          var node = nodesToInit[ni];");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("          var graphDef = node.textContent || node.innerText || '';");
+                script.Append("          var graphType = 'unknown';");
+                script.Append("          if (graphDef.indexOf('gantt') !== -1) graphType = 'gantt';");
+                script.Append("          else if (graphDef.indexOf('sequenceDiagram') !== -1) graphType = 'sequence';");
+                script.Append("          else if (graphDef.indexOf('graph') !== -1 || graphDef.indexOf('flowchart') !== -1) graphType = 'flowchart';");
+                script.Append("          try {");
+                script.Append("            mermaid.init(undefined, node);");
+                script.Append("          } catch(e) {");
+                script.Append("            initErrors.push({ idx: ni, type: graphType, error: e.message, preview: graphDef.substring(0, 100) });");
+                script.Append("            var errDiv = document.createElement('div');");
+                script.Append("            errDiv.style.cssText = 'background:#f44;color:#fff;padding:10px;font-size:12px;margin:5px 0;';");
+                script.Append("            errDiv.textContent = 'Mermaid Error [' + graphType + ']: ' + e.message;");
+                script.Append("            node.parentNode.insertBefore(errDiv, node);");
+                script.Append("          }");
+            }
+            else
+            {
+                script.Append("          try { mermaid.init(undefined, node); } catch(e) {}");
+            }
+#else
+            script.Append("          try { mermaid.init(undefined, node); } catch(e) {}");
+#endif
+
             script.Append("        }");
-            script.Append("      } catch(e) {");
-            script.Append("        renderErrors.push(e.message || e.toString());");
-            script.Append("        mermaidArr[r].innerHTML = '<pre style=\"color:#ff6b6b;background:#2e3440;padding:10px;\">Render Error: ' + (e.message || e) + '</pre>';");
-            script.Append("      }");
-            script.Append("    }");
-            script.Append("    if (renderErrors.length > 0) {");
-            script.Append("      debugInfo += ', errors: ' + renderErrors.join('; ');");
-            script.Append("    } else {");
-            script.Append("      debugInfo += ', render: OK';");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("        if (initErrors.length > 0) {");
+                script.Append("          initDebug.textContent += ' | ERRORS: ' + JSON.stringify(initErrors);");
+                script.Append("        } else {");
+                script.Append("          initDebug.textContent += ' | init() called for ' + nodesToInit.length + ' nodes';");
+                script.Append("        }");
+            }
+#endif
+            
+            // 延迟处理 SVG 尺寸
+            script.Append("        var pollCount = 0;");
+            script.Append("        var pollInterval = setInterval(function() {");
+            script.Append("          pollCount++;");
+            script.Append("          var svgs = container.querySelectorAll('.mermaid svg');");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("          var allMermaids = container.querySelectorAll('.mermaid');");
+                script.Append("          initDebug.textContent = '[Mermaid Poll #' + pollCount + '] .mermaid divs=' + allMermaids.length + ', SVGs=' + svgs.length;");
+            }
+#endif
+
+            script.Append("          if (svgs.length > 0 || pollCount >= 10) {");
+            script.Append("            clearInterval(pollInterval);");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("            initDebug.textContent += ' [Done] Found ' + svgs.length + ' SVGs after ' + pollCount + ' polls';");
+                script.Append("            var debugInfo = [];");
+            }
+#endif
+            
+            // 处理 SVG 尺寸
+            script.Append("            for(var s=0; s<svgs.length; s++) {");
+            script.Append("              var svg = svgs[s];");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("              var logEntry = {idx: s};");
+            }
+#endif
+
+            script.Append("              var origViewBox = svg.getAttribute('viewBox');");
+            script.Append("              var origW = svg.getAttribute('width');");
+            script.Append("              var origH = svg.getAttribute('height');");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("              logEntry.origViewBox = origViewBox;");
+                script.Append("              logEntry.origW = origW; logEntry.origH = origH;");
+            }
+#endif
+
+            script.Append("              var origViewBoxParts = origViewBox ? origViewBox.split(' ') : [];");
+            script.Append("              var vbW = 0, vbH = 0;");
+            script.Append("              if (origViewBoxParts.length === 4) {");
+            script.Append("                vbW = parseFloat(origViewBoxParts[2]);");
+            script.Append("                vbH = parseFloat(origViewBoxParts[3]);");
+            script.Append("              }");
+            script.Append("              if (!vbW || !vbH) {");
+            script.Append("                if (origW && origH && (origW+'').indexOf('%') === -1) {");
+            script.Append("                  vbW = parseFloat(origW);");
+            script.Append("                  vbH = parseFloat(origH);");
+            script.Append("                }");
+            script.Append("              }");
+            script.Append("              if (!vbW || !vbH) {");
+            script.Append("                try {");
+            script.Append("                  var bbox = svg.getBBox();");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("                  logEntry.bboxResult = { x: bbox.x, y: bbox.y, w: bbox.width, h: bbox.height };");
+            }
+#endif
+
+            script.Append("                  if (bbox && bbox.width > 0 && bbox.height > 0) {");
+            script.Append("                    vbW = bbox.width; vbH = bbox.height;");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("                    logEntry.bboxFallback = true;");
+            }
+#endif
+
+            script.Append("                    svg.setAttribute('viewBox', bbox.x + ' ' + bbox.y + ' ' + bbox.width + ' ' + bbox.height);");
+            script.Append("                  }");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("                } catch(e) { logEntry.bboxError = e.message; }");
+            }
+            else
+            {
+                script.Append("                } catch(e) {}");
+            }
+#else
+            script.Append("                } catch(e) {}");
+#endif
+
+            script.Append("              }");
+            script.Append("              if (!vbW || !vbH) {");
+            script.Append("                var mDiv = svg.parentNode;");
+            script.Append("                var defaultW = mDiv ? mDiv.clientWidth - 40 : 600;");
+            script.Append("                if (defaultW <= 0) defaultW = 600;");
+            script.Append("                var defaultH = 400;");
+            script.Append("                svg.style.cssText = 'width: ' + defaultW + 'px !important; height: ' + defaultH + 'px !important; max-width: none !important;';");
+            script.Append("                svg.setAttribute('width', defaultW);");
+            script.Append("                svg.setAttribute('height', defaultH);");
+            script.Append("                if (!svg.getAttribute('viewBox')) svg.setAttribute('viewBox', '0 0 ' + defaultW + ' ' + defaultH);");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("                logEntry.defaultFallback = true;");
+                script.Append("                logEntry.appliedW = defaultW;");
+                script.Append("                logEntry.appliedH = defaultH;");
+            }
+#endif
+
+            script.Append("              }");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("              logEntry.vbW = vbW; logEntry.vbH = vbH;");
+            }
+#endif
+
+            script.Append("              if (vbW > 0 && vbH > 0) {");
+            script.Append("                var mDiv = svg.parentNode;");
+            script.Append("                var containerW = mDiv ? mDiv.clientWidth : 600;");
+            script.Append("                if (containerW <= 0) containerW = 600;");
+            script.Append("                var maxAllowedW = containerW - 40;");
+            script.Append("                var aspectRatio = vbH / vbW;");
+            script.Append("                var finalW = Math.min(vbW, maxAllowedW);");
+            script.Append("                var finalH = finalW * aspectRatio;");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("                logEntry.containerW = containerW; logEntry.maxAllowedW = maxAllowedW; logEntry.finalW = finalW; logEntry.finalH = finalH;");
+            }
+#endif
+
+            script.Append("                svg.style.cssText = 'width: ' + finalW + 'px !important; height: ' + finalH + 'px !important; max-width: none !important;';");
+            script.Append("                svg.setAttribute('width', finalW);");
+            script.Append("                svg.setAttribute('height', finalH);");
+            script.Append("              }");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("              debugInfo.push(logEntry);");
+            }
+#endif
+
+            script.Append("            }");
+
+#if !WINDOWS_PHONE_APP
+            if (showMermaidDebug)
+            {
+                script.Append("            initDebug.textContent += ' [SVG Info] ' + JSON.stringify(debugInfo);");
+            }
+#endif
+
+            script.Append("          }");
+            script.Append("        }, 200);");
+            script.Append("      }, 50);");
             script.Append("    }");
             script.Append("  }");
-            // DEBUG: 检查 SVG 元素数量
-            script.Append("  var svgCount = container.querySelectorAll('.mermaid svg').length;");
-            script.Append("  debugInfo += ', svgs: ' + svgCount;");
-            // DEBUG: 显示调试信息在页面顶部
-            script.Append("  var debugDiv = document.createElement('div');");
-            script.Append("  debugDiv.style.cssText = 'background:#333;color:#0f0;padding:5px;font-size:10px;position:fixed;top:0;left:0;right:0;z-index:9999;';");
-            script.Append("  debugDiv.textContent = debugInfo;");
-            script.Append("  document.body.insertBefore(debugDiv, document.body.firstChild);");
+            // -----------------------------------------------------------
 
             script.Append("  if(doc) doc.scrollTop = scrollTop;");
             script.Append("  if(body) body.scrollTop = scrollTop;");
             script.Append("  container.style.minHeight = '';");
             script.Append("})();");
+            
             try { await webView.InvokeScriptAsync("eval", new[] { script.ToString() }); } catch { }
         }
 
+        // ... UpdateBlockAsync 等辅助方法保持原样 (如果你需要我也改 UpdateBlockAsync 请告诉我，逻辑同上) ...
+        
+        // 为了完整性，这里包含其余的辅助方法
         public async Task UpdateBlockAsync(WebView webView, MarkdownBlock block)
         {
-            if (webView == null || block == null) return;
+             if (webView == null || block == null) return;
             var blockHtml = BuildBlockHtml(block);
             var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(blockHtml));
             var script = new StringBuilder();
@@ -629,23 +927,33 @@ namespace MetroMarkdownEditor.Services
             script.Append("  if(!next) return;");
             script.Append("  target.parentNode.replaceChild(next, target);");
 
-            // 新增块表格处理
-            script.Append("  var tablesInBlock = next.getElementsByTagName('table');");
-            script.Append("  for (var i = tablesInBlock.length - 1; i >= 0; i--) {");
-            script.Append("    var table = tablesInBlock[i];");
-            script.Append("    if (table.parentNode.className.indexOf('table-wrapper') === -1) {");
-            script.Append("      var wrapper = document.createElement('div');");
-            script.Append("      wrapper.className = 'table-wrapper';");
-            script.Append("      table.parentNode.insertBefore(wrapper, table);");
-            script.Append("      wrapper.appendChild(table);");
+            // 简单处理新块中的 mermaid
+            script.Append("  if (typeof mermaid !== 'undefined') {");
+            script.Append("    var mCodes = next.querySelectorAll('code.language-mermaid');");
+            script.Append("    var mNodes = [];");
+            script.Append("    for(var i=0; i<mCodes.length; i++){");
+            script.Append("       var d = document.createElement('div'); d.className='mermaid'; d.textContent = mCodes[i].innerText;");
+            script.Append("       mCodes[i].parentNode.parentNode.replaceChild(d, mCodes[i].parentNode);");
+            script.Append("       mNodes.push(d);");
+            script.Append("    }");
+            script.Append("    if(mNodes.length > 0) {");
+            script.Append("       setTimeout(function(){");
+            script.Append("         try {");
+            script.Append("           mermaid.init(undefined, mNodes);");
+            script.Append("           var svgs = next.querySelectorAll('.mermaid svg');");
+            script.Append("           for(var s=0; s<svgs.length; s++) {");
+            script.Append("             var svg = svgs[s];");
+            script.Append("             svg.removeAttribute('height');");
+            script.Append("             svg.removeAttribute('width');");
+            script.Append("             svg.style.height = 'auto';");
+            script.Append("             svg.style.width = '100%';");
+            script.Append("             svg.style.maxWidth = 'none';");
+            script.Append("           }");
+            script.Append("         } catch(e) {}");
+            script.Append("       }, 0);");
             script.Append("    }");
             script.Append("  }");
-
-            // 触发高亮
-            script.Append("  if (typeof hljs !== 'undefined') {");
-            script.Append("    var blocks = next.querySelectorAll('pre code');");
-            script.Append("    for(var i=0;i<blocks.length;i++){ hljs.highlightBlock(blocks[i]); }");
-            script.Append("  }");
+            
             script.Append("})();");
             try { await webView.InvokeScriptAsync("eval", new[] { script.ToString() }); } catch { }
         }

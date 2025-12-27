@@ -62,10 +62,17 @@ namespace MetroMarkdownEditor.Services
                     _useSystemAccentColor = value;
                     ApplicationData.Current.LocalSettings.Values["UseSystemAccentColor"] = value;
                     RaisePropertyChanged();
+                    RaisePropertyChanged("UseAppDefaultAccent");
                     RaisePropertyChanged("AccentBrush");
                     OnThemeChanged();
                 }
             }
+        }
+
+        public bool UseAppDefaultAccent
+        {
+            get { return !_useSystemAccentColor; }
+            set { if (value) UseSystemAccentColor = false; }
         }
 
         public PreviewThemeType PreviewTheme

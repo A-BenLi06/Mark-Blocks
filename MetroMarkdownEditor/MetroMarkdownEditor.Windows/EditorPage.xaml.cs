@@ -58,6 +58,12 @@ namespace MetroMarkdownEditor.Windows
         // 保存 ThemeViewModel 的引用，以便监听全局主题切换
         private INotifyPropertyChanged _themeViewModel;
 
+        // 搜索功能状态变量
+        private int _lastSearchIndex = -1;
+        private string _lastSearchText = string.Empty;
+        private int _lastHighlightStart = -1;
+        private int _lastHighlightLength = 0;
+
         // 便捷访问 ViewModel
         private EditorViewModel ViewModel
         {
@@ -217,6 +223,14 @@ namespace MetroMarkdownEditor.Windows
             {
                 args.Handled = true;
                 Redo();
+                return;
+            }
+            
+            // Ctrl+F: 搜索
+            if (args.VirtualKey == global::Windows.System.VirtualKey.F)
+            {
+                args.Handled = true;
+                ShowSearchDialog();
                 return;
             }
         }
@@ -1139,5 +1153,318 @@ namespace MetroMarkdownEditor.Windows
             public bool RequiresCold;   // 是否需要冷更新（全量刷新）
             public int LineIndex;       // 发生变化的行号
         }
+
+        // ==========================================
+        // 搜索功能
+        // ==========================================
+
+        /// <summary>
+        /// 搜索按钮点击事件
+        /// </summary>
+        private void SearchButton_Click(object sender, RoutedEventArgs e)
+        {
+            ShowSearchDialog();
+        }
+
+        /// <summary>
+        /// 显示搜索对话框
+        /// </summary>
+        private void ShowSearchDialog()
+        {
+            // 创建搜索弹窗内容
+            var searchBox = new TextBox
+            {
+                PlaceholderText = "Search...",
+                Text = _lastSearchText,
+                Width = 420,  // 1.5x 宽度
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            searchBox.SelectAll();
+
+            var findPrevButton = new Button
+            {
+                Content = "← Find Previous",
+                Width = 195,  // 1.5x 宽度
+                Margin = new Thickness(0, 0, 12, 0)
+            };
+
+            var findNextButton = new Button
+            {
+                Content = "Find Next →",
+                Width = 195  // 1.5x 宽度
+            };
+
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            buttonPanel.Children.Add(findPrevButton);
+            buttonPanel.Children.Add(findNextButton);
+
+            var contentPanel = new StackPanel();
+
+            // 标题栏 (包含标题和关闭按钮)
+            var titlePanel = new Grid();
+            titlePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            titlePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var titleBlock = new TextBlock
+            {
+                Text = "Search",
+                FontSize = 20,
+                FontWeight = global::Windows.UI.Text.FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(titleBlock, 0);
+
+            var closeButton = new Button
+            {
+                Content = "✕",
+                FontSize = 14,
+                Width = 32,
+                Height = 32,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0)
+            };
+            Grid.SetColumn(closeButton, 1);
+
+            titlePanel.Children.Add(titleBlock);
+            titlePanel.Children.Add(closeButton);
+            titlePanel.Margin = new Thickness(0, 0, 0, 12);
+
+            contentPanel.Children.Add(titlePanel);
+            contentPanel.Children.Add(searchBox);
+            contentPanel.Children.Add(buttonPanel);
+
+            // 使用 Border 包装 StackPanel 以支持 Padding 和 Border
+            var contentBorder = new Border
+            {
+                Padding = new Thickness(20),
+                Background = (SolidColorBrush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"],
+                BorderBrush = new SolidColorBrush(Colors.Gray),
+                BorderThickness = new Thickness(1),
+                Child = contentPanel
+            };
+
+            var popup = new global::Windows.UI.Xaml.Controls.Primitives.Popup
+            {
+                Child = contentBorder,
+                IsLightDismissEnabled = false  // 禁用点击外部关闭
+            };
+
+            // 计算位置: 水平居中, 垂直位于 37.8% 处
+            var windowBounds = Window.Current.Bounds;
+            double dialogWidth = 510;  // 宽度增加到1.5倍
+            popup.HorizontalOffset = (windowBounds.Width - dialogWidth) / 2;
+            popup.VerticalOffset = windowBounds.Height * 0.378;
+
+            // 关闭按钮事件
+            closeButton.Click += (s, args) =>
+            {
+                _lastSearchText = searchBox.Text;
+                popup.IsOpen = false;
+            };
+
+            // 按钮事件 - 不关闭对话框
+            findNextButton.Click += (s, args) =>
+            {
+                _lastSearchText = searchBox.Text;
+                FindAndSelect(searchBox.Text, findNext: true);
+            };
+
+            findPrevButton.Click += (s, args) =>
+            {
+                _lastSearchText = searchBox.Text;
+                FindAndSelect(searchBox.Text, findNext: false);
+            };
+
+            // 支持 Enter 键触发向下查找, Escape 关闭
+            searchBox.KeyDown += (s, args) =>
+            {
+                if (args.Key == global::Windows.System.VirtualKey.Enter)
+                {
+                    _lastSearchText = searchBox.Text;
+                    FindAndSelect(searchBox.Text, findNext: true);
+                    args.Handled = true;
+                }
+                else if (args.Key == global::Windows.System.VirtualKey.Escape)
+                {
+                    _lastSearchText = searchBox.Text;
+                    popup.IsOpen = false;
+                    args.Handled = true;
+                }
+            };
+
+            popup.IsOpen = true;
+            searchBox.Focus(FocusState.Programmatic);
+        }
+
+
+        /// <summary>
+        /// 在编辑器或预览中查找并选中/高亮文本
+        /// </summary>
+        /// <param name="searchText">要搜索的文本</param>
+        /// <param name="findNext">true=向下查找, false=向上查找</param>
+        private void FindAndSelect(string searchText, bool findNext)
+        {
+            if (string.IsNullOrEmpty(searchText)) return;
+
+            // 根据当前视图模式决定搜索目标
+            if (ViewModel != null && ViewModel.ViewMode == EditorViewMode.Preview)
+            {
+                // 预览模式：只在 WebView 中搜索
+                FindInPreview(searchText, findNext);
+            }
+            else if (ViewModel != null && ViewModel.ViewMode == EditorViewMode.Split)
+            {
+                // 分屏模式：两边都搜索
+                FindInEditor(searchText, findNext);
+                FindInPreview(searchText, findNext);
+            }
+            else
+            {
+                // 编辑模式：只在 RichEditBox 中搜索
+                FindInEditor(searchText, findNext);
+            }
+        }
+
+        /// <summary>
+        /// 在编辑器中查找并选中文本
+        /// </summary>
+        private void FindInEditor(string searchText, bool findNext)
+        {
+            if (EditorBox == null || EditorBox.Document == null) return;
+
+            string fullText;
+            EditorBox.Document.GetText(TextGetOptions.None, out fullText);
+            if (string.IsNullOrEmpty(fullText)) return;
+
+            int startIndex;
+            int foundIndex = -1;
+
+            if (findNext)
+            {
+                // 向下查找
+                startIndex = _lastSearchIndex >= 0 ? _lastSearchIndex + 1 : 0;
+                if (startIndex >= fullText.Length) startIndex = 0;
+                
+                foundIndex = fullText.IndexOf(searchText, startIndex, StringComparison.OrdinalIgnoreCase);
+                
+                // 如果没找到，从头开始找
+                if (foundIndex < 0 && startIndex > 0)
+                {
+                    foundIndex = fullText.IndexOf(searchText, 0, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            else
+            {
+                // 向上查找
+                startIndex = _lastSearchIndex > 0 ? _lastSearchIndex - 1 : fullText.Length - 1;
+                if (startIndex < 0) startIndex = fullText.Length - 1;
+                
+                foundIndex = fullText.LastIndexOf(searchText, startIndex, StringComparison.OrdinalIgnoreCase);
+                
+                // 如果没找到，从尾开始找
+                if (foundIndex < 0 && startIndex < fullText.Length - 1)
+                {
+                    foundIndex = fullText.LastIndexOf(searchText, fullText.Length - 1, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            if (foundIndex >= 0)
+            {
+                // 清除上一次的高亮
+                if (_lastHighlightStart >= 0 && _lastHighlightLength > 0)
+                {
+                    try
+                    {
+                        var oldRange = EditorBox.Document.GetRange(_lastHighlightStart, _lastHighlightStart + _lastHighlightLength);
+                        oldRange.CharacterFormat.BackgroundColor = Colors.Transparent;
+                    }
+                    catch { /* 忽略索引越界 */ }
+                }
+                
+                _lastSearchIndex = foundIndex;
+                _lastHighlightStart = foundIndex;
+                _lastHighlightLength = searchText.Length;
+                
+                var range = EditorBox.Document.GetRange(foundIndex, foundIndex + searchText.Length);
+                
+                // 高亮当前匹配的文本（黄色背景，黑色文字）
+                range.CharacterFormat.BackgroundColor = Colors.Yellow;
+                range.CharacterFormat.ForegroundColor = Colors.Black;
+                
+                range.ScrollIntoView(PointOptions.Start);
+                EditorBox.Document.Selection.SetRange(foundIndex, foundIndex + searchText.Length);
+            }
+        }
+
+        /// <summary>
+        /// 在预览 WebView 中查找并高亮文本
+        /// </summary>
+        private async void FindInPreview(string searchText, bool findNext)
+        {
+            if (PreviewWebView == null || !_isWebViewReady) return;
+
+            try
+            {
+                // 使用更可靠的 DOM 遍历方法查找并高亮文本
+                var escapedText = searchText.Replace("\\", "\\\\").Replace("'", "\\'").Replace("\r", "").Replace("\n", "");
+                var backwards = findNext ? "false" : "true";
+                var script = string.Format(
+                    @"(function() {{
+                        // 清除所有之前的高亮
+                        var highlights = document.querySelectorAll('.search-highlight');
+                        for (var i = 0; i < highlights.length; i++) {{
+                            var h = highlights[i];
+                            var parent = h.parentNode;
+                            parent.replaceChild(document.createTextNode(h.textContent), h);
+                            parent.normalize();
+                        }}
+                        
+                        // 使用 window.find 定位文本
+                        var found = window.find('{0}', false, {1}, true);
+                        
+                        if (found) {{
+                            var sel = window.getSelection();
+                            if (sel && sel.rangeCount > 0) {{
+                                var range = sel.getRangeAt(0);
+                                
+                                // 创建高亮 span
+                                var span = document.createElement('span');
+                                span.className = 'search-highlight';
+                                span.style.cssText = 'background-color: #FFFF00 !important; color: #000000 !important; padding: 2px; border-radius: 2px;';
+                                
+                                try {{
+                                    range.surroundContents(span);
+                                    
+                                    // 滚动到可见区域
+                                    span.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                                }} catch(e) {{
+                                    // 如果 surroundContents 失败，尝试手动创建节点
+                                    try {{
+                                        var frag = range.extractContents();
+                                        span.appendChild(frag);
+                                        range.insertNode(span);
+                                        span.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                                    }} catch(e2) {{}}
+                                }}
+                            }}
+                        }}
+                        return found ? 'found' : 'notfound';
+                    }})()",
+                    escapedText,
+                    backwards);
+
+                await PreviewWebView.InvokeScriptAsync("eval", new[] { script });
+            }
+            catch
+            {
+                // 忽略脚本执行错误
+            }
+        }
     }
 }
+

@@ -28,6 +28,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownHighlightingHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\BackgroundService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\BackgroundHistoryService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\DevSettingsService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\BaseViewModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\DocumentViewModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ViewModels\EditorNavigationRequest.cs" />
@@ -115,10 +116,6 @@
     <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\mermaid7.min.js" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\core.min.js" />
-  </ItemGroup>
-  <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\url-polyfill.min.js" />
-    <Content Include="$(MSBuildThisFileDirectory)Assets\Mermaid\regenerator-runtime.js" />
   </ItemGroup>
 </Project>

@@ -2,7 +2,7 @@
 <Package xmlns="http://schemas.microsoft.com/appx/2010/manifest" xmlns:m2="http://schemas.microsoft.com/appx/2013/manifest">
   <Identity Name="24dc1f2e-ae8d-45d7-ac6e-4ba609c0d5d2" Publisher="CN=ben_l" Version="2.1.0.0" />
   <Properties>
-    <DisplayName>MetroMarkdownEditor.Windows</DisplayName>
+    <DisplayName>Mark::Blocks</DisplayName>
     <PublisherDisplayName>ben_l</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -15,10 +15,15 @@
   </Resources>
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="MetroMarkdownEditor.Windows.App">
-      <m2:VisualElements DisplayName="MetroMarkdownEditor.Windows" Square150x150Logo="Assets\Logo.png" Square30x30Logo="Assets\SmallLogo.png" Description="MetroMarkdownEditor.Windows" ForegroundText="light" BackgroundColor="#464646" ToastCapable="true">
-        <m2:DefaultTile Square310x310Logo="Assets\Square310x310Logo.png" Wide310x150Logo="Assets\Wide310x150Logo.png">
+      <m2:VisualElements DisplayName="Mark::Blocks" Square150x150Logo="Assets\Logo.png" Square30x30Logo="Assets\SmallLogo.png" Description="Mark::Blocks" ForegroundText="dark" BackgroundColor="transparent" ToastCapable="true">
+        <m2:DefaultTile Square310x310Logo="Assets\Square310x310Logo.png" Wide310x150Logo="Assets\Wide310x150Logo.png" DefaultSize="square150x150Logo" Square70x70Logo="Assets\Square70x70Logo.png">
+          <m2:ShowNameOnTiles>
+            <m2:ShowOn Tile="square150x150Logo" />
+            <m2:ShowOn Tile="wide310x150Logo" />
+            <m2:ShowOn Tile="square310x310Logo" />
+          </m2:ShowNameOnTiles>
         </m2:DefaultTile>
-        <m2:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#03123c" />
+        <m2:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="transparent" />
         <m2:InitialRotationPreference>
           <m2:Rotation Preference="portrait" />
           <m2:Rotation Preference="landscape" />
@@ -26,6 +31,18 @@
           <m2:Rotation Preference="landscapeFlipped" />
         </m2:InitialRotationPreference>
       </m2:VisualElements>
+      <Extensions>
+        <Extension Category="windows.fileTypeAssociation">
+          <FileTypeAssociation Name="markdown">
+            <DisplayName>Markdown File</DisplayName>
+            <SupportedFileTypes>
+              <FileType ContentType="text/markdown">.md</FileType>
+              <FileType ContentType="text/markdown">.markdown</FileType>
+              <FileType ContentType="text/plain">.txt</FileType>
+            </SupportedFileTypes>
+          </FileTypeAssociation>
+        </Extension>
+      </Extensions>
     </Application>
   </Applications>
   <Capabilities>

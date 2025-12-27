@@ -1,4 +1,5 @@
 ﻿using System;
+using MetroMarkdownEditor.Services;
 using MetroMarkdownEditor.ViewModels;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
@@ -87,6 +88,7 @@ namespace MetroMarkdownEditor
             // 使用 GUID 字符串作为 ID 可以解决这个 FormatException
             args.Request.ApplicationCommands.Add(new SettingsCommand("28a24559-0017-4959-9b93-669e20032908", "Personalization", _ => ShowThemeSettings()));
             args.Request.ApplicationCommands.Add(new SettingsCommand("c5f5e4f5-71d8-4a0c-bd27-3f58b6c6fbc0", "Auto Save", _ => ShowAutoSaveSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("a1b2c3d4-5e6f-7a8b-9c0d-e1f2a3b4c5d6", "Dev", _ => ShowDevSettings()));
         }
 
         private void ShowThemeSettings()
@@ -107,6 +109,12 @@ namespace MetroMarkdownEditor
             flyout.DataContext = Services.AutoSaveService.Instance;
             flyout.Show();
         }
+
+        private void ShowDevSettings()
+        {
+            var flyout = new DevSettings();
+            flyout.Show();
+        }
 #endif
 
         private void OnSuspending(object sender, SuspendingEventArgs e)
@@ -115,13 +123,71 @@ namespace MetroMarkdownEditor
             deferral.Complete();
         }
 
+        /// <summary>
+        /// Handles file activation when app is opened via file association (.md, .markdown, .txt)
+        /// </summary>
+        protected override async void OnFileActivated(FileActivatedEventArgs args)
+        {
+            base.OnFileActivated(args);
+
+            var rootFrame = Window.Current.Content as Frame;
+            if (rootFrame == null)
+            {
+                rootFrame = new Frame { CacheSize = 1 };
+                Window.Current.Content = rootFrame;
+            }
+
+            var locator = Resources["Locator"] as ViewModelLocator;
+            if (locator != null)
+            {
+                await locator.RecentFiles.InitializeAsync();
+                locator.Theme.ApplyThemeToRoot();
+
+                // Handle the activated file
+                if (args.Files.Count > 0)
+                {
+                    var file = args.Files[0] as global::Windows.Storage.StorageFile;
+                    if (file != null)
+                    {
+                        // Store the file for EditorPage to pick up
+                        locator.Editor.SetOpenedFile(file);
+                        
+                        // Navigate directly to EditorPage
+#if WINDOWS_PHONE_APP
+                        rootFrame.Navigate(typeof(WindowsPhone.EditorPage));
+#else
+                        rootFrame.Navigate(typeof(Windows.EditorPage));
+#endif
+                    }
+                    else
+                    {
+                        rootFrame.Navigate(typeof(MainPage));
+                    }
+                }
+                else
+                {
+                    rootFrame.Navigate(typeof(MainPage));
+                }
+            }
+            else
+            {
+                rootFrame.Navigate(typeof(MainPage));
+            }
+
+            Window.Current.Activate();
+        }
+
 #if WINDOWS_PHONE_APP
         // Track if we're picking background image
         public static bool IsPickingBackgroundImage { get; set; }
+        
+        // Track if we're picking editor file from MainPage
+        public static bool IsPickingEditorFile { get; set; }
 
         protected override async void OnActivated(IActivatedEventArgs args)
         {
             var locator = Resources["Locator"] as ViewModelLocator;
+            var rootFrame = Window.Current.Content as Frame;
 
             var openArgs = args as FileOpenPickerContinuationEventArgs;
             if (openArgs != null && locator != null)
@@ -133,6 +199,24 @@ namespace MetroMarkdownEditor
                     if (openArgs.Files != null && openArgs.Files.Count > 0)
                     {
                         await locator.Background.SetBackgroundFromFileAsync(openArgs.Files[0]);
+                        // Auto-switch to Custom mode
+                        locator.Background.BackgroundMode = MainPageBackgroundMode.Custom;
+                    }
+                }
+                // Check if we're picking an editor file from MainPage
+                else if (IsPickingEditorFile)
+                {
+                    IsPickingEditorFile = false;
+                    if (openArgs.Files != null && openArgs.Files.Count > 0)
+                    {
+                        // Handle the picked file in EditorViewModel and navigate to EditorPage
+                        await locator.Editor.HandleOpenPickerContinuation(openArgs);
+                        
+                        // Navigate to EditorPage
+                        if (rootFrame != null)
+                        {
+                            rootFrame.Navigate(typeof(WindowsPhone.EditorPage));
+                        }
                     }
                 }
                 else

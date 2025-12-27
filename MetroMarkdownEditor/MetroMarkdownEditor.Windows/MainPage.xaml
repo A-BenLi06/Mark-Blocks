@@ -10,10 +10,14 @@
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Default">
-                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#2D2D30" /> <SolidColorBrush x:Key="TilePathTextBrush" Color="#999999" />   </ResourceDictionary>
+                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#2D2D30" />
+                    <SolidColorBrush x:Key="TilePathTextBrush" Color="#999999" />
+                </ResourceDictionary>
                 
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#E6E6E6" /> <SolidColorBrush x:Key="TilePathTextBrush" Color="#666666" />   </ResourceDictionary>
+                    <SolidColorBrush x:Key="TileBackgroundBrush" Color="#E6E6E6" />
+                    <SolidColorBrush x:Key="TilePathTextBrush" Color="#666666" />
+                </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Page.Resources>
@@ -25,17 +29,17 @@
     </Page.Transitions>
 
     <Grid x:Name="LayoutRoot" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <!-- Custom Background Image (if set) -->
+        <!-- Background Image (Default or Custom mode) -->
         <Image x:Name="BackgroundImage"
                Source="{Binding Background.BackgroundImage, Source={StaticResource Locator}}"
                Stretch="UniformToFill"
                HorizontalAlignment="Center"
                VerticalAlignment="Center"
-               Visibility="{Binding Background.UseCustomBackground, Source={StaticResource Locator}, Converter={StaticResource BoolToVisibilityConverter}}" />
+               Visibility="{Binding Background.ShowBackground, Source={StaticResource Locator}, Converter={StaticResource BoolToVisibilityConverter}}" />
         
-        <!-- Overlay for readability (Dark: 70% black, Light: 70% white) -->
+        <!-- Overlay for readability (Custom mode only) -->
         <Rectangle x:Name="BackgroundOverlay"
-                   Visibility="{Binding Background.UseCustomBackground, Source={StaticResource Locator}, Converter={StaticResource BoolToVisibilityConverter}}" />
+                   Visibility="{Binding Background.ShowOverlay, Source={StaticResource Locator}, Converter={StaticResource BoolToVisibilityConverter}}" />
         
         <!-- Main Content -->
         <Grid>
@@ -46,18 +50,19 @@
             </Grid.RowDefinitions>
 
 
-        <StackPanel Margin="48,36,48,24">
-            <TextBlock Text="MetroMarkdownEditor"
-                       Style="{StaticResource HeaderTextBlockStyle}"
-                       FontSize="42"
-                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}" />
-            <TextBlock Text="A clean markdown editor for Windows."
-                       Margin="0,4,0,16"
+        <StackPanel Margin="48,81,48,0" RenderTransformOrigin="0.5,0.285">
+            <TextBlock Style="{StaticResource HeaderTextBlockStyle}"
+                       FontSize="96"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}" Height="52">
+                <Run FontWeight="SemiBold" Text="Mark" /><Run FontWeight="SemiBold" Text="::" /><Run FontWeight="Light" Text="Blocks" />
+            </TextBlock>
+                <TextBlock Text="A clean Metro style markdown editor for all windows platforms."
+                       Margin="2,4,2,16"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                       Opacity="0.6" />
-        </StackPanel>
+                       Opacity="0.6" Height="24" />
+            </StackPanel>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="48,12,48,12">
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="48,24,48,0">
             <Button Content="New"
                     Width="160"
                     Height="56"
@@ -74,11 +79,11 @@
                     Margin="16,0,0,0" />
         </StackPanel>
 
-        <StackPanel Grid.Row="2" Margin="48,0,48,24">
+        <StackPanel Grid.Row="2" Margin="48,24,48,0">
             <TextBlock Text="Recent files"
                        Margin="0,0,0,12"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                       FontSize="18" />
+                       FontSize="18" Height="43" />
             <GridView ItemsSource="{Binding RecentFiles}"
                       SelectionMode="None"
                       Margin="0,0,0,12">

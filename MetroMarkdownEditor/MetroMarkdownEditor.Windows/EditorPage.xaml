@@ -137,6 +137,12 @@
                         <SymbolIcon Symbol="Refresh"/>
                     </AppBarButton.Icon>
                 </AppBarButton>
+
+                <AppBarButton Label="Search" Click="SearchButton_Click">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="Find"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
             </CommandBar.PrimaryCommands>
 
             <CommandBar.SecondaryCommands>

@@ -34,6 +34,7 @@ namespace MetroMarkdownEditor.ViewModels
         private bool _isSaving;
         private string _saveStatusText;
         private string _exportContent; // For WP8.1 continuation
+        private StorageFile _pendingFile; // File opened via file association
 
         public EditorViewModel(ThemeService themeService, RecentFileService recentFiles)
         {
@@ -180,10 +181,25 @@ namespace MetroMarkdownEditor.ViewModels
 
         public async Task InitializeAsync()
         {
-            if (!OpenDocuments.Any())
+            // If there's a pending file from file activation, load it
+            if (_pendingFile != null)
+            {
+                var file = _pendingFile;
+                _pendingFile = null;
+                await LoadFileAsync(file);
+            }
+            else if (!OpenDocuments.Any())
             {
                 await CreateNewAsync();
             }
+        }
+
+        /// <summary>
+        /// Sets a file to be opened when the editor initializes (used by file activation)
+        /// </summary>
+        public void SetOpenedFile(StorageFile file)
+        {
+            _pendingFile = file;
         }
 
         public async Task CreateNewAsync()

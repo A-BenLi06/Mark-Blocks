@@ -21,32 +21,37 @@
             <ToggleSwitch Header="Dark theme"
                           IsOn="{Binding IsDarkTheme, Mode=TwoWay}" />
 
-            <!-- Background Image Section -->
-            <TextBlock Text="Background Theme"
+            <!-- MainPage Background Section -->
+            <TextBlock Text="MainPage Background"
                        FontSize="18"
                        FontWeight="SemiBold"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Margin="0,24,0,8" />
-            <TextBlock Text="Set a custom background image for the main page."
+            <TextBlock Text="Choose background style for the main page."
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Opacity="0.6"
                        Margin="0,0,0,12" />
             
+            <RadioButton Content="Default (Theme Images)"
+                         GroupName="MainPageBackground"
+                         IsChecked="{Binding Background.IsDefaultMode, Source={StaticResource Locator}, Mode=TwoWay}"
+                         Margin="0,0,0,8" />
+            <RadioButton Content="Pure (Solid Color)"
+                         GroupName="MainPageBackground"
+                         IsChecked="{Binding Background.IsPureMode, Source={StaticResource Locator}, Mode=TwoWay}"
+                         Margin="0,0,0,8" />
+            <RadioButton Content="Custom Image"
+                         GroupName="MainPageBackground"
+                         IsChecked="{Binding Background.IsCustomMode, Source={StaticResource Locator}, Mode=TwoWay}"
+                         Margin="0,0,0,8" />
+            
             <Button x:Name="ChooseImageButton"
-                    Content="Choose Image"
+                    Content="Choose Custom Image"
                     Click="ChooseBackground_Click"
                     HorizontalAlignment="Stretch"
                     Height="48"
                     FontSize="16"
                     Margin="0,0,0,8" />
-            
-            <Button x:Name="ResetImageButton"
-                    Content="Reset to Default"
-                    Click="ResetBackground_Click"
-                    HorizontalAlignment="Stretch"
-                    Height="48"
-                    FontSize="16"
-                    Visibility="{Binding UseCustomBackground, Converter={StaticResource BoolToVisibilityConverter}}" />
 
             <!-- Accent Color Section -->
             <TextBlock Text="Accent Color"
