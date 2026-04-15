@@ -175,6 +175,11 @@ namespace MetroMarkdownEditor.ViewModels
 
         public void SetTheme(ElementTheme theme)
         {
+            if (_currentTheme == theme)
+            {
+                return;
+            }
+
             _currentTheme = theme;
             UpdatePreview();
         }
@@ -482,12 +487,26 @@ namespace MetroMarkdownEditor.ViewModels
                 return string.Empty;
             }
 
-            return Regex.Replace(html, "(<img[^>]*src=\")([^\"]*)(\"[^>]*>)", m =>
+            var normalized = Regex.Replace(html, "(<img[^>]*src=\")([^\"]*)(\"[^>]*>)", m =>
             {
                 var prefix = m.Groups[1].Value;
                 var src = NormalizeImageSource(m.Groups[2].Value);
                 var suffix = m.Groups[3].Value;
                 return prefix + src + suffix;
+            });
+
+            return Regex.Replace(normalized, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", m =>
+            {
+                var before = m.Groups[1].Value;
+                var src = m.Groups[2].Value;
+                var after = m.Groups[3].Value;
+
+                if (before.Contains("data-src=") || after.Contains("data-src="))
+                {
+                    return m.Value;
+                }
+
+                return "<img loading=\"lazy\" decoding=\"async\" data-lazy-ready=\"true\" data-src=\"" + src + "\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\"" + before + after + ">";
             });
         }
 

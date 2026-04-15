@@ -30,6 +30,7 @@ namespace MetroMarkdownEditor.Windows
         
         // 防抖动计时器：避免每敲一个字符就触发高亮和渲染，提高性能
         private readonly DispatcherTimer _typingTimer;
+        private readonly DispatcherTimer _previewScrollTimer;
         
         // 渲染服务：负责生成 HTML 和 CSS
         private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
@@ -51,6 +52,8 @@ namespace MetroMarkdownEditor.Windows
         private bool _isWebViewReady;   // WebView 是否导航完成
         private bool _pendingRender;    // 是否有挂起的渲染任务
         private ElementTheme _lastTheme = ElementTheme.Light; // 记录上次主题，用于检测切换
+        private double _pendingPreviewScrollRatio;
+        private int _renderGeneration;
         
         // 编辑器的内部滚动条引用，用于同步滚动
         private ScrollViewer _editorScrollViewer;
@@ -75,14 +78,16 @@ namespace MetroMarkdownEditor.Windows
             InitializeComponent();
 
             // 初始化计时器
-            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _typingTimer.Tick += TypingTimer_Tick;
 
             _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _undoTimer.Tick += UndoTimer_Tick;
 
+            _previewScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
+            _previewScrollTimer.Tick += PreviewScrollTimer_Tick;
+
             // 注册事件
-            PreviewWebView.NavigationCompleted += PreviewWebView_NavigationCompleted;
             EditorBox.Loaded += EditorBox_Loaded;
             
             // 构造时尝试应用一次样式，作为兜底防止字体异常
@@ -173,6 +178,10 @@ namespace MetroMarkdownEditor.Windows
             {
                 _editorScrollViewer.ViewChanged -= OnEditorScrollViewerViewChanged;
             }
+
+            _typingTimer.Stop();
+            _undoTimer.Stop();
+            _previewScrollTimer.Stop();
             
             // 取消全局快捷键监听
             Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
@@ -273,13 +282,25 @@ namespace MetroMarkdownEditor.Windows
             // 计算滚动比例 (0.0 - 1.0)
             var total = scroll.ScrollableHeight;
             var ratio = total > 0 ? scroll.VerticalOffset / total : 0;
-            SyncPreviewScroll(ratio);
+            _pendingPreviewScrollRatio = ratio;
+
+            if (!e.IsIntermediate)
+            {
+                var _ = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
+                _previewScrollTimer.Stop();
+                return;
+            }
+
+            if (!_previewScrollTimer.IsEnabled)
+            {
+                _previewScrollTimer.Start();
+            }
         }
 
         /// <summary>
         /// 注入 JS 控制 WebView 滚动
         /// </summary>
-        private async void SyncPreviewScroll(double ratio)
+        private async Task SyncPreviewScrollAsync(double ratio)
         {
             if (!_isWebViewReady || PreviewWebView == null) return;
 
@@ -298,6 +319,18 @@ namespace MetroMarkdownEditor.Windows
             }
         }
 
+        private void PreviewScrollTimer_Tick(object sender, object e)
+        {
+            _previewScrollTimer.Stop();
+
+            if (!_isWebViewReady || PreviewWebView == null || ViewModel == null || ViewModel.ViewMode != EditorViewMode.Split)
+            {
+                return;
+            }
+
+            var _ = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
+        }
+
         // 当全局主题 ViewModel 变化时，强制刷新编辑器高亮和预览
         private void OnThemeViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
@@ -305,7 +338,7 @@ namespace MetroMarkdownEditor.Windows
             {
                 // 主题变了，不仅颜色要变，字体也可能需要重新确认
                 ApplyEditorFormatting(); 
-                HighlightMarkdownSyntax();
+                HighlightMarkdownSyntax(forceFullDocument: true);
                 var __ = RenderPreviewAsync(); 
             });
         }
@@ -315,7 +348,10 @@ namespace MetroMarkdownEditor.Windows
         {
             if (e.PropertyName == "PreviewContent")
             {
-                var _ = RenderPreviewAsync();
+                if (ShouldRenderPreview())
+                {
+                    var _ = RenderPreviewAsync();
+                }
             }
             else if (e.PropertyName == "ActiveDocument")
             {
@@ -324,6 +360,10 @@ namespace MetroMarkdownEditor.Windows
                 
                 // 自动滚动标签栏使当前文档可见 (平滑动画)
                 var __ = ScrollToActiveDocumentAsync();
+            }
+            else if (e.PropertyName == "ViewMode" && ShouldRenderPreview())
+            {
+                var _ = RenderPreviewAsync();
             }
         }
         
@@ -509,6 +549,9 @@ namespace MetroMarkdownEditor.Windows
         private async Task RenderPreviewAsync()
         {
             if (ViewModel == null) return;
+            if (!ShouldRenderPreview()) return;
+
+            var generation = ++_renderGeneration;
 
             var theme = GetCurrentTheme();
             ViewModel.SetTheme(theme);
@@ -528,9 +571,43 @@ namespace MetroMarkdownEditor.Windows
                 return;
             }
 
-            // 增量更新内容
-            await _renderService.UpdateContentAsync(PreviewWebView, ViewModel.PreviewContent ?? string.Empty, isMarkdown: false);
-            _lastBlocks = ViewModel.PreviewBlocks ?? new List<MarkdownBlock>();
+            var nextBlocks = ViewModel.PreviewBlocks ?? new List<MarkdownBlock>();
+            bool appliedBlockDiff = false;
+
+            if (_skeletonLoaded && CanApplyBlockDiff(_lastBlocks, nextBlocks))
+            {
+                var changedBlocks = FindChangedBlocks(_lastBlocks, nextBlocks);
+                if (changedBlocks.Count == 0)
+                {
+                    _lastBlocks = nextBlocks;
+                    return;
+                }
+
+                if (changedBlocks.Count > 0 && changedBlocks.Count <= 4)
+                {
+                    foreach (var block in changedBlocks)
+                    {
+                        if (generation != _renderGeneration)
+                        {
+                            return;
+                        }
+
+                        await _renderService.UpdateBlockAsync(PreviewWebView, block);
+                    }
+
+                    appliedBlockDiff = true;
+                }
+            }
+
+            if (!appliedBlockDiff)
+            {
+                await _renderService.UpdateContentAsync(PreviewWebView, ViewModel.PreviewContent ?? string.Empty, isMarkdown: false);
+            }
+
+            if (generation == _renderGeneration)
+            {
+                _lastBlocks = nextBlocks;
+            }
         }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -572,7 +649,7 @@ namespace MetroMarkdownEditor.Windows
 
             bool hotRendered = false;
             // 尝试局部更新 (Hot Render)
-            if (change.IsHot && change.LineIndex >= 0 && _skeletonLoaded)
+            if (change.IsHot && change.LineIndex >= 0 && _skeletonLoaded && ShouldRenderPreview() && _isWebViewReady)
             {
                 var targetBlock = FindBlockForLine(change.LineIndex);
                 var updatedBlock = BuildUpdatedBlock(targetBlock, text);
@@ -610,7 +687,7 @@ namespace MetroMarkdownEditor.Windows
             var scroll = FindScrollViewer(EditorBox);
             double? vertical = scroll != null ? (double?)scroll.VerticalOffset : null;
 
-            HighlightMarkdownSyntax();
+            HighlightMarkdownSyntax(forceFullDocument: false);
 
             if (ViewModel != null)
             {
@@ -728,6 +805,37 @@ namespace MetroMarkdownEditor.Windows
             return (text ?? string.Empty).Replace("\r\n", "\n").Split('\n');
         }
 
+        private bool ShouldRenderPreview()
+        {
+            return ViewModel != null && ViewModel.ViewMode != EditorViewMode.Write;
+        }
+
+        private bool CanApplyBlockDiff(IReadOnlyList<MarkdownBlock> previousBlocks, IReadOnlyList<MarkdownBlock> nextBlocks)
+        {
+            if (previousBlocks == null || nextBlocks == null) return false;
+            if (previousBlocks.Count == 0 || previousBlocks.Count != nextBlocks.Count) return false;
+            return true;
+        }
+
+        private List<MarkdownBlock> FindChangedBlocks(IReadOnlyList<MarkdownBlock> previousBlocks, IReadOnlyList<MarkdownBlock> nextBlocks)
+        {
+            var changed = new List<MarkdownBlock>();
+            if (previousBlocks == null || nextBlocks == null) return changed;
+
+            var count = Math.Min(previousBlocks.Count, nextBlocks.Count);
+            for (int i = 0; i < count; i++)
+            {
+                var previous = previousBlocks[i];
+                var next = nextBlocks[i];
+                if (!string.Equals(previous.Text, next.Text, StringComparison.Ordinal))
+                {
+                    changed.Add(next);
+                }
+            }
+
+            return changed;
+        }
+
         private string GetNormalizedEditorText()
         {
             if (EditorBox == null || EditorBox.Document == null) return string.Empty;
@@ -812,7 +920,7 @@ namespace MetroMarkdownEditor.Windows
             
             // 每次 SetText 后必须重新应用格式，因为 RichEditBox 会回退到默认样式
             ApplyEditorFormatting();
-            HighlightMarkdownSyntax();
+            HighlightMarkdownSyntax(forceFullDocument: true);
             
             if (ViewModel != null)
             {
@@ -890,7 +998,7 @@ namespace MetroMarkdownEditor.Windows
             
             // 漏掉的修复：打开文件后也必须强力纠正格式
             ApplyEditorFormatting();
-            HighlightMarkdownSyntax();
+            HighlightMarkdownSyntax(forceFullDocument: true);
 
             if (ViewModel != null)
             {
@@ -932,7 +1040,7 @@ namespace MetroMarkdownEditor.Windows
                 
                 // 每次 SetText 后立即应用格式，然后再高亮
                 ApplyEditorFormatting();
-                HighlightMarkdownSyntax();
+                HighlightMarkdownSyntax(forceFullDocument: true);
                 
                 ResetUndoRedo();
             }
@@ -941,7 +1049,7 @@ namespace MetroMarkdownEditor.Windows
         /// <summary>
         /// Markdown 语法高亮逻辑 (Regex 基于)
         /// </summary>
-        private void HighlightMarkdownSyntax()
+        private void HighlightMarkdownSyntax(bool forceFullDocument)
         {
             if (EditorBox == null || EditorBox.Document == null) return;
 
@@ -983,60 +1091,75 @@ namespace MetroMarkdownEditor.Windows
 
                 int start = doc.Selection.StartPosition;
                 int end = doc.Selection.EndPosition;
+                bool useFullDocument = forceFullDocument || text.Length <= 30000;
+                int highlightStart = 0;
+                int highlightLength = text.Length;
 
-                ITextRange fullRange = doc.GetRange(0, text.Length);
+                if (!useFullDocument)
+                {
+                    highlightStart = Math.Max(0, Math.Min(start, end) - 2048);
+                    var highlightEnd = Math.Min(text.Length, Math.Max(start, end) + 2048);
+                    highlightLength = Math.Max(0, highlightEnd - highlightStart);
+                }
+
+                var workingText = useFullDocument ? text : text.Substring(highlightStart, highlightLength);
+
+                ITextRange fullRange = doc.GetRange(highlightStart, highlightStart + highlightLength);
                 fullRange.CharacterFormat.ForegroundColor = bodyColor;
 
                 RegexOptions options = RegexOptions.Multiline;
 
                 // 标题
-                MatchCollection headers = Regex.Matches(text, @"(?:^|\r)(#{1,6})(?=\s)", options);
+                MatchCollection headers = Regex.Matches(workingText, @"(?:^|\n)(#{1,6})(?=\s)", options);
                 foreach (Match m in headers)
                 {
                     Group g = m.Groups[1];
-                    ITextRange range = doc.GetRange(g.Index, g.Index + g.Length);
+                    int rangeStart = highlightStart + g.Index;
+                    ITextRange range = doc.GetRange(rangeStart, rangeStart + g.Length);
                     range.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
                 // 链接
-                MatchCollection links = Regex.Matches(text, @"(!?\[)(.*?)(\])(\(.*?\))", options);
+                MatchCollection links = Regex.Matches(workingText, @"(!?\[)(.*?)(\])(\(.*?\))", options);
                 foreach (Match m in links)
                 {
-                    ITextRange r1 = doc.GetRange(m.Groups[1].Index, m.Groups[1].Index + m.Groups[1].Length);
+                    ITextRange r1 = doc.GetRange(highlightStart + m.Groups[1].Index, highlightStart + m.Groups[1].Index + m.Groups[1].Length);
                     r1.CharacterFormat.ForegroundColor = syntaxColor;
-                    ITextRange r3 = doc.GetRange(m.Groups[3].Index, m.Groups[3].Index + m.Groups[3].Length);
+                    ITextRange r3 = doc.GetRange(highlightStart + m.Groups[3].Index, highlightStart + m.Groups[3].Index + m.Groups[3].Length);
                     r3.CharacterFormat.ForegroundColor = syntaxColor;
-                    ITextRange r4 = doc.GetRange(m.Groups[4].Index, m.Groups[4].Index + m.Groups[4].Length);
+                    ITextRange r4 = doc.GetRange(highlightStart + m.Groups[4].Index, highlightStart + m.Groups[4].Index + m.Groups[4].Length);
                     r4.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
                 // 样式 (粗体/斜体)
-                MatchCollection styles = Regex.Matches(text, @"(\*\*|__|\*|_|~~)(.+?)\1", options);
+                MatchCollection styles = Regex.Matches(workingText, @"(\*\*|__|\*|_|~~)(.+?)\1", options);
                 foreach (Match m in styles)
                 {
                     Group leftSign = m.Groups[1];
-                    ITextRange rLeft = doc.GetRange(leftSign.Index, leftSign.Index + leftSign.Length);
+                    ITextRange rLeft = doc.GetRange(highlightStart + leftSign.Index, highlightStart + leftSign.Index + leftSign.Length);
                     rLeft.CharacterFormat.ForegroundColor = syntaxColor;
-                    int rightSignStart = m.Index + m.Length - leftSign.Length;
+                    int rightSignStart = highlightStart + m.Index + m.Length - leftSign.Length;
                     ITextRange rRight = doc.GetRange(rightSignStart, rightSignStart + leftSign.Length);
                     rRight.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
                 // 引用
-                MatchCollection quotes = Regex.Matches(text, @"(?:^|\r)(>\s)", options);
+                MatchCollection quotes = Regex.Matches(workingText, @"(?:^|\n)(>\s)", options);
                 foreach (Match m in quotes)
                 {
                     Group g = m.Groups[1];
-                    ITextRange range = doc.GetRange(g.Index, g.Index + g.Length);
+                    int rangeStart = highlightStart + g.Index;
+                    ITextRange range = doc.GetRange(rangeStart, rangeStart + g.Length);
                     range.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
                 // 分割线
-                MatchCollection hrs = Regex.Matches(text, @"(?:^|\r)(\-\-\-|\*\*\*)$", options);
+                MatchCollection hrs = Regex.Matches(workingText, @"(?:^|\n)(\-\-\-|\*\*\*)$", options);
                 foreach (Match m in hrs)
                 {
                     Group g = m.Groups[1];
-                    ITextRange range = doc.GetRange(g.Index, g.Index + g.Length);
+                    int rangeStart = highlightStart + g.Index;
+                    ITextRange range = doc.GetRange(rangeStart, rangeStart + g.Length);
                     range.CharacterFormat.ForegroundColor = syntaxColor;
                 }
 
