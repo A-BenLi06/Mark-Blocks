@@ -140,16 +140,18 @@ namespace MetroMarkdownEditor.Services
             sb.Append(currentCssContent);
 
             // 2. 注入自定义基础样式
+            sb.Append("html, body { margin: 0; min-height: 100%; }");
             sb.Append("body { ");
             sb.Append($"font-family: 'Segoe UI', sans-serif; line-height: {lineHeight}; padding: {containerPadding}; ");
             sb.Append($"font-size: {baseFontSize};");
             sb.Append("color: " + bodyColor + "; background-color: " + bgColor + "; ");
-            sb.Append("word-wrap: break-word; overflow-wrap: break-word;");
+            sb.Append("word-wrap: break-word; overflow-wrap: break-word; box-sizing: border-box; min-height: 100vh;");
 #if WINDOWS_PHONE_APP
             // WP: Enable hyphenation for better text flow
             sb.Append("-ms-hyphens: auto; hyphens: auto;");
 #endif
             sb.Append("}");
+            sb.Append("#content { min-height: calc(100vh - 48px); box-sizing: border-box; padding-bottom: 44px; }");
 
 #if WINDOWS_PHONE_APP
             // WP: Advanced IE text justification + hyphenation for paragraphs
@@ -613,6 +615,12 @@ namespace MetroMarkdownEditor.Services
             script.Append("  }");
 
             // KaTeX 渲染
+            AppendFragmentEnhancements(script, "container");
+            AppendVisibleBlockProcessing(script, "container", true);
+            script.Append("  if(doc) doc.scrollTop = scrollTop;");
+            script.Append("  if(body) body.scrollTop = scrollTop;");
+            script.Append("  container.style.minHeight = '';");
+            script.Append("  return;");
             script.Append("  if (typeof katex !== 'undefined') {");
             script.Append("    var mathElements = container.querySelectorAll('.math');");
             script.Append("    for (var i = 0; i < mathElements.length; i++) {");
@@ -915,50 +923,274 @@ namespace MetroMarkdownEditor.Services
              if (webView == null || block == null) return;
             var blockHtml = BuildBlockHtml(block);
             var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(blockHtml));
+            var requiresHeavyProcessing = BlockNeedsHeavyProcessing(block);
             var script = new StringBuilder();
             script.Append("(function(){");
             script.Append("  var container = document.getElementById('content');");
             script.Append("  if(!container) return;");
             script.Append("  var target = container.querySelector('[data-block=\"").Append(block.Index).Append("\"]');");
             script.Append("  if(!target) return;");
+            script.Append("  var doc = document.documentElement; var body = document.body;");
+            script.Append("  var scrollTop = (doc && doc.scrollTop) || (body && body.scrollTop);");
             script.Append("  var tmp = document.createElement('div');");
             script.Append("  tmp.innerHTML = decodeURIComponent(escape(window.atob('").Append(payload).Append("')));");
             script.Append("  var next = tmp.firstElementChild;");
             script.Append("  if(!next) return;");
             script.Append("  target.parentNode.replaceChild(next, target);");
 
+            if (requiresHeavyProcessing)
+            {
+                AppendFragmentEnhancements(script, "next");
+                AppendVisibleBlockProcessing(script, "next", false);
+            }
+
+            script.Append("  if(doc) doc.scrollTop = scrollTop;");
+            script.Append("  if(body) body.scrollTop = scrollTop;");
+            script.Append("  return;");
+
             // 简单处理新块中的 mermaid
-            script.Append("  if (typeof mermaid !== 'undefined') {");
-            script.Append("    var mCodes = next.querySelectorAll('code.language-mermaid');");
-            script.Append("    var mNodes = [];");
-            script.Append("    for(var i=0; i<mCodes.length; i++){");
-            script.Append("       var d = document.createElement('div'); d.className='mermaid'; d.textContent = mCodes[i].innerText;");
-            script.Append("       mCodes[i].parentNode.parentNode.replaceChild(d, mCodes[i].parentNode);");
-            script.Append("       mNodes.push(d);");
-            script.Append("    }");
-            script.Append("    if(mNodes.length > 0) {");
-            script.Append("       setTimeout(function(){");
-            script.Append("         try {");
-            script.Append("           mermaid.init(undefined, mNodes);");
-            script.Append("           var svgs = next.querySelectorAll('.mermaid svg');");
-            script.Append("           for(var s=0; s<svgs.length; s++) {");
-            script.Append("             var svg = svgs[s];");
-            script.Append("             svg.removeAttribute('height');");
-            script.Append("             svg.removeAttribute('width');");
-            script.Append("             svg.style.height = 'auto';");
-            script.Append("             svg.style.width = '100%';");
-            script.Append("             svg.style.maxWidth = 'none';");
-            script.Append("           }");
-            script.Append("         } catch(e) {}");
-            script.Append("       }, 0);");
-            script.Append("    }");
-            script.Append("  }");
-            
             script.Append("})();");
             try { await webView.InvokeScriptAsync("eval", new[] { script.ToString() }); } catch { }
         }
 
         public string ToHtml(string markdown) => Markdig.Markdown.ToHtml(markdown ?? string.Empty, _pipeline);
+
+        private void AppendFragmentEnhancements(StringBuilder script, string scopeVariable)
+        {
+            script.Append("  var images = ").Append(scopeVariable).Append(".getElementsByTagName('img');");
+            script.Append("  for (var imgIndex = 0; imgIndex < images.length; imgIndex++) {");
+            script.Append("    var img = images[imgIndex];");
+            script.Append("    img.setAttribute('loading', 'lazy');");
+            script.Append("    img.setAttribute('decoding', 'async');");
+            script.Append("    img.style.maxHeight = '70vh';");
+            script.Append("    if (!img.getAttribute('data-placeholder-src')) { img.setAttribute('data-placeholder-src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='); }");
+            script.Append("    if (img.getAttribute('data-src') && img.getAttribute('src') !== img.getAttribute('data-placeholder-src')) { img.setAttribute('src', img.getAttribute('data-placeholder-src')); }");
+            script.Append("  }");
+        }
+
+        private void AppendVisibleBlockProcessing(StringBuilder script, string scopeVariable, bool includeDeferredPass)
+        {
+            script.Append("  window.__mdIsNearViewport = window.__mdIsNearViewport || function(el) {");
+            script.Append("    if (!el || !el.getBoundingClientRect) return false;");
+            script.Append("    var rect = el.getBoundingClientRect();");
+            script.Append("    var margin = Math.max(window.innerHeight || 0, 600);");
+            script.Append("    return rect.bottom >= -margin && rect.top <= (window.innerHeight || 0) + margin;");
+            script.Append("  };");
+
+            script.Append("  window.__mdActivateImage = window.__mdActivateImage || function(img) {");
+            script.Append("    if (!img) return;");
+            script.Append("    var dataSrc = img.getAttribute('data-src') || img.getAttribute('data-original-src');");
+            script.Append("    if (!dataSrc) return;");
+            script.Append("    img.setAttribute('src', dataSrc);");
+            script.Append("    img.setAttribute('data-original-src', dataSrc);");
+            script.Append("    img.removeAttribute('data-src');");
+            script.Append("  };");
+
+            script.Append("  window.__mdReleaseFarImage = window.__mdReleaseFarImage || function(img) {");
+            script.Append("    if (!img) return;");
+            script.Append("    var currentSrc = img.getAttribute('src');");
+            script.Append("    var placeholderSrc = img.getAttribute('data-placeholder-src');");
+            script.Append("    if (!placeholderSrc || !currentSrc || currentSrc === placeholderSrc) return;");
+            script.Append("    if (!img.getAttribute('data-original-src')) img.setAttribute('data-original-src', currentSrc);");
+            script.Append("    img.setAttribute('data-src', img.getAttribute('data-original-src'));");
+            script.Append("    img.setAttribute('src', placeholderSrc);");
+            script.Append("  };");
+
+            script.Append("  window.__mdProcessVisibleImages = window.__mdProcessVisibleImages || function(root) {");
+            script.Append("    var host = root || document.getElementById('content');");
+            script.Append("    if (!host || !host.querySelectorAll) return;");
+            script.Append("    var images = host.querySelectorAll('img');");
+            script.Append("    var viewportHeight = window.innerHeight || 0;");
+            script.Append("    var releaseMargin = Math.max(viewportHeight * 3, 1800);");
+            script.Append("    for (var imageIndex = 0; imageIndex < images.length; imageIndex++) {");
+            script.Append("      var img = images[imageIndex];");
+            script.Append("      if (!img || !img.getBoundingClientRect) continue;");
+            script.Append("      var rect = img.getBoundingClientRect();");
+            script.Append("      if (rect.bottom < -releaseMargin || rect.top > viewportHeight + releaseMargin) {");
+            script.Append("        window.__mdReleaseFarImage(img);");
+            script.Append("        continue;");
+            script.Append("      }");
+            script.Append("      if ((img.getAttribute('data-src') || img.getAttribute('data-original-src')) && window.__mdIsNearViewport(img)) {");
+            script.Append("        window.__mdActivateImage(img);");
+            script.Append("      }");
+            script.Append("    }");
+            script.Append("  };");
+
+            script.Append("  window.__mdResizeMermaid = window.__mdResizeMermaid || function(scope) {");
+            script.Append("    if (!scope || !scope.querySelectorAll) return;");
+            script.Append("    var svgs = scope.querySelectorAll('.mermaid svg');");
+            script.Append("    for (var s = 0; s < svgs.length; s++) {");
+            script.Append("      var svg = svgs[s];");
+            script.Append("      svg.style.width = '100%';");
+            script.Append("      svg.style.height = 'auto';");
+            script.Append("      svg.style.maxWidth = 'none';");
+            script.Append("    }");
+            script.Append("  };");
+
+            script.Append("  window.__mdProcessBlockHeavy = window.__mdProcessBlockHeavy || function(block) {");
+            script.Append("    if (!block || block.getAttribute('data-heavy-ready') === 'true') return;");
+            script.Append("    block.setAttribute('data-heavy-ready', 'true');");
+            script.Append("    if (typeof katex !== 'undefined') {");
+            script.Append("      var mathElements = block.querySelectorAll('.math');");
+            script.Append("      for (var i = 0; i < mathElements.length; i++) {");
+            script.Append("        var el = mathElements[i];");
+            script.Append("        if (el.getAttribute('data-rendered')) continue;");
+            script.Append("        var tex = el.textContent || el.innerText;");
+            script.Append("        var displayMode = el.tagName === 'DIV';");
+            script.Append("        try { katex.render(tex, el, { displayMode: displayMode, throwOnError: false }); el.setAttribute('data-rendered', 'true'); } catch (e) {}");
+            script.Append("      }");
+            script.Append("    }");
+            script.Append("    if (typeof hljs !== 'undefined') {");
+            script.Append("      var codeBlocks = block.querySelectorAll('pre code');");
+            script.Append("      for (var c = 0; c < codeBlocks.length; c++) {");
+            script.Append("        var code = codeBlocks[c];");
+            script.Append("        if (code.getAttribute('data-hljs-ready')) continue;");
+            script.Append("        hljs.highlightBlock(code);");
+            script.Append("        code.setAttribute('data-hljs-ready', 'true');");
+            script.Append("      }");
+            script.Append("    }");
+            script.Append("    if (typeof mermaid !== 'undefined') {");
+            script.Append("      var mermaidTargets = block.querySelectorAll('code.language-mermaid, pre.mermaid code, div.mermaid');");
+            script.Append("      var nodesToInit = [];");
+            script.Append("      for (var m = 0; m < mermaidTargets.length; m++) {");
+            script.Append("        var target = mermaidTargets[m];");
+            script.Append("        if (target.className && (target.className.indexOf('language-flow') !== -1 || target.className.indexOf('language-sequence') !== -1)) continue;");
+            script.Append("        if (target.tagName.toLowerCase() === 'div' && target.className === 'mermaid') {");
+            script.Append("          if (!target.getAttribute('data-processed')) nodesToInit.push(target);");
+            script.Append("          continue;");
+            script.Append("        }");
+            script.Append("        var graphDef = target.innerText || target.textContent || '';");
+            script.Append("        graphDef = graphDef.replace(/^\\s*flowchart\\s+/m, 'graph ');");
+            script.Append("        var newDiv = document.createElement('div');");
+            script.Append("        newDiv.className = 'mermaid';");
+            script.Append("        newDiv.textContent = graphDef;");
+            script.Append("        var parentPre = target.parentNode;");
+            script.Append("        if (parentPre && parentPre.tagName.toLowerCase() === 'pre' && parentPre.parentNode) {");
+            script.Append("          parentPre.parentNode.replaceChild(newDiv, parentPre);");
+            script.Append("        } else if (target.parentNode) {");
+            script.Append("          target.parentNode.replaceChild(newDiv, target);");
+            script.Append("        }");
+            script.Append("        nodesToInit.push(newDiv);");
+            script.Append("      }");
+            script.Append("      if (nodesToInit.length > 0) {");
+            script.Append("        setTimeout(function() {");
+            script.Append("          for (var n = 0; n < nodesToInit.length; n++) {");
+            script.Append("            try { mermaid.init(undefined, nodesToInit[n]); } catch (e) {}");
+            script.Append("          }");
+            script.Append("          window.__mdResizeMermaid(block);");
+            script.Append("        }, 0);");
+            script.Append("      } else {");
+            script.Append("        window.__mdResizeMermaid(block);");
+            script.Append("      }");
+            script.Append("    }");
+            script.Append("  };");
+
+            script.Append("  window.__mdCollectBlocks = window.__mdCollectBlocks || function(root) {");
+            script.Append("    var host = root || document.getElementById('content');");
+            script.Append("    if (!host || !host.querySelectorAll) return [];");
+            script.Append("    var blocks = [];");
+            script.Append("    if (host.className && host.className.indexOf('md-block') !== -1) blocks.push(host);");
+            script.Append("    var nestedBlocks = host.querySelectorAll('.md-block');");
+            script.Append("    for (var nestedIndex = 0; nestedIndex < nestedBlocks.length; nestedIndex++) { blocks.push(nestedBlocks[nestedIndex]); }");
+            script.Append("    return blocks;");
+            script.Append("  };");
+
+            script.Append("  window.__mdBlockBudget = window.__mdBlockBudget || 2;");
+            script.Append("  window.__mdProcessVisibleBlocks = window.__mdProcessVisibleBlocks || function(root, budget) {");
+            script.Append("    var blocks = window.__mdCollectBlocks(root);");
+            script.Append("    if (!blocks.length) return 0;");
+            script.Append("    var remaining = typeof budget === 'number' ? budget : window.__mdBlockBudget;");
+            script.Append("    var processed = 0;");
+            script.Append("    for (var b = 0; b < blocks.length; b++) {");
+            script.Append("      if (remaining <= 0) break;");
+            script.Append("      var block = blocks[b];");
+            script.Append("      if (block.getAttribute('data-heavy-ready') === 'true') continue;");
+            script.Append("      if (!window.__mdIsNearViewport(block)) continue;");
+            script.Append("      window.__mdProcessBlockHeavy(block);");
+            script.Append("      processed++;");
+            script.Append("      remaining--;");
+            script.Append("    }");
+            script.Append("    return processed;");
+            script.Append("  };");
+
+            script.Append("  window.__mdScheduleVisibleBlockPass = window.__mdScheduleVisibleBlockPass || function(root) {");
+            script.Append("    if (window.__mdVisibleBlockBudgetTimer) return;");
+            script.Append("    window.__mdVisibleBlockBudgetTimer = setTimeout(function() {");
+            script.Append("      window.__mdVisibleBlockBudgetTimer = null;");
+            script.Append("      var host = root || document.getElementById('content');");
+            script.Append("      var processed = window.__mdProcessVisibleBlocks(host, window.__mdBlockBudget);");
+            script.Append("      if (processed >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(host);");
+            script.Append("    }, 80);");
+            script.Append("  };");
+
+            script.Append("  var hostBlocks = [];");
+            script.Append("  if (").Append(scopeVariable).Append(".className && ").Append(scopeVariable).Append(".className.indexOf('md-block') !== -1) hostBlocks.push(").Append(scopeVariable).Append(");");
+            script.Append("  var nestedHostBlocks = ").Append(scopeVariable).Append(".querySelectorAll('.md-block');");
+            script.Append("  for (var nestedHostIndex = 0; nestedHostIndex < nestedHostBlocks.length; nestedHostIndex++) { hostBlocks.push(nestedHostBlocks[nestedHostIndex]); }");
+            script.Append("  for (var hostIndex = 0; hostIndex < hostBlocks.length; hostIndex++) {");
+            script.Append("    hostBlocks[hostIndex].removeAttribute('data-heavy-ready');");
+            script.Append("  }");
+
+            script.Append("  if (!window.__mdVisibleBlocksBound) {");
+            script.Append("    window.__mdVisibleBlocksBound = true;");
+            script.Append("    var scheduled = false;");
+            script.Append("    var trigger = function() {");
+            script.Append("      if (scheduled) return;");
+            script.Append("      scheduled = true;");
+            script.Append("      setTimeout(function() {");
+            script.Append("        scheduled = false;");
+            script.Append("        var content = document.getElementById('content');");
+            script.Append("        window.__mdProcessVisibleImages(content);");
+            script.Append("        var processed = window.__mdProcessVisibleBlocks(content, window.__mdBlockBudget);");
+            script.Append("        if (processed >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(content);");
+            script.Append("      }, 60);");
+            script.Append("    };");
+            script.Append("    window.addEventListener('scroll', trigger);");
+            script.Append("    window.addEventListener('resize', trigger);");
+            script.Append("  }");
+
+            script.Append("  window.__mdProcessVisibleImages(").Append(scopeVariable).Append(");");
+            script.Append("  if (window.__mdProcessVisibleBlocks(").Append(scopeVariable).Append(", window.__mdBlockBudget) >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(").Append(scopeVariable).Append(");");
+
+            if (includeDeferredPass)
+            {
+                script.Append("  setTimeout(function(){");
+                script.Append("    window.__mdProcessVisibleImages(").Append(scopeVariable).Append(");");
+                script.Append("    if (window.__mdProcessVisibleBlocks(").Append(scopeVariable).Append(", window.__mdBlockBudget) >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(").Append(scopeVariable).Append(");");
+                script.Append("  }, 120);");
+            }
+        }
+
+        private bool BlockNeedsHeavyProcessing(MarkdownBlock block)
+        {
+            return block != null && BlockNeedsHeavyProcessing(block.Text);
+        }
+
+        private bool BlockNeedsHeavyProcessing(string markdown)
+        {
+            var text = markdown ?? string.Empty;
+            if (text.Length == 0) return false;
+
+            return text.IndexOf("![", StringComparison.Ordinal) >= 0
+                || text.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("```", StringComparison.Ordinal) >= 0
+                || text.IndexOf("~~~", StringComparison.Ordinal) >= 0
+                || text.IndexOf("$$", StringComparison.Ordinal) >= 0
+                || text.IndexOf("\\(", StringComparison.Ordinal) >= 0
+                || text.IndexOf("\\[", StringComparison.Ordinal) >= 0
+                || text.IndexOf("```mermaid", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("```math", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private string EnhanceHtmlFragment(string html)
+        {
+            if (string.IsNullOrEmpty(html))
+            {
+                return string.Empty;
+            }
+
+            return System.Text.RegularExpressions.Regex.Replace(html, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", "<img loading=\"lazy\" decoding=\"async\" data-src=\"$2\" data-placeholder-src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\"$1$3>");
+        }
 
         private static string NormalizeNewLines(string value) => (value ?? string.Empty).Replace("\r\n", "\n");
 
@@ -1005,7 +1237,7 @@ namespace MetroMarkdownEditor.Services
 
         private string BuildBlockHtml(MarkdownBlock block)
         {
-            var inner = Markdown.ToHtml(block.Text ?? string.Empty, _pipeline);
+            var inner = EnhanceHtmlFragment(Markdown.ToHtml(block.Text ?? string.Empty, _pipeline));
             var sb = new StringBuilder();
             sb.Append("<div class=\"md-block\" data-block=\"").Append(block.Index).Append("\" data-start=\"").Append(block.StartLine).Append("\" data-end=\"").Append(block.EndLine).Append("\">");
             sb.Append(inner);
