@@ -140,16 +140,18 @@ namespace MetroMarkdownEditor.Services
             sb.Append(currentCssContent);
 
             // 2. 注入自定义基础样式
+            sb.Append("html, body { margin: 0; min-height: 100%; }");
             sb.Append("body { ");
             sb.Append($"font-family: 'Segoe UI', sans-serif; line-height: {lineHeight}; padding: {containerPadding}; ");
             sb.Append($"font-size: {baseFontSize};");
             sb.Append("color: " + bodyColor + "; background-color: " + bgColor + "; ");
-            sb.Append("word-wrap: break-word; overflow-wrap: break-word;");
+            sb.Append("word-wrap: break-word; overflow-wrap: break-word; box-sizing: border-box; min-height: 100vh;");
 #if WINDOWS_PHONE_APP
             // WP: Enable hyphenation for better text flow
             sb.Append("-ms-hyphens: auto; hyphens: auto;");
 #endif
             sb.Append("}");
+            sb.Append("#content { min-height: calc(100vh - 48px); box-sizing: border-box; padding-bottom: 44px; }");
 
 #if WINDOWS_PHONE_APP
             // WP: Advanced IE text justification + hyphenation for paragraphs
@@ -614,7 +616,7 @@ namespace MetroMarkdownEditor.Services
 
             // KaTeX 渲染
             AppendFragmentEnhancements(script, "container");
-            AppendVisibleBlockProcessing(script, "container");
+            AppendVisibleBlockProcessing(script, "container", true);
             script.Append("  if(doc) doc.scrollTop = scrollTop;");
             script.Append("  if(body) body.scrollTop = scrollTop;");
             script.Append("  container.style.minHeight = '';");
@@ -921,6 +923,7 @@ namespace MetroMarkdownEditor.Services
              if (webView == null || block == null) return;
             var blockHtml = BuildBlockHtml(block);
             var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(blockHtml));
+            var requiresHeavyProcessing = BlockNeedsHeavyProcessing(block);
             var script = new StringBuilder();
             script.Append("(function(){");
             script.Append("  var container = document.getElementById('content');");
@@ -934,8 +937,13 @@ namespace MetroMarkdownEditor.Services
             script.Append("  var next = tmp.firstElementChild;");
             script.Append("  if(!next) return;");
             script.Append("  target.parentNode.replaceChild(next, target);");
-            AppendFragmentEnhancements(script, "next");
-            AppendVisibleBlockProcessing(script, "next");
+
+            if (requiresHeavyProcessing)
+            {
+                AppendFragmentEnhancements(script, "next");
+                AppendVisibleBlockProcessing(script, "next", false);
+            }
+
             script.Append("  if(doc) doc.scrollTop = scrollTop;");
             script.Append("  if(body) body.scrollTop = scrollTop;");
             script.Append("  return;");
@@ -960,7 +968,7 @@ namespace MetroMarkdownEditor.Services
             script.Append("  }");
         }
 
-        private void AppendVisibleBlockProcessing(StringBuilder script, string scopeVariable)
+        private void AppendVisibleBlockProcessing(StringBuilder script, string scopeVariable, bool includeDeferredPass)
         {
             script.Append("  window.__mdIsNearViewport = window.__mdIsNearViewport || function(el) {");
             script.Append("    if (!el || !el.getBoundingClientRect) return false;");
@@ -1143,10 +1151,35 @@ namespace MetroMarkdownEditor.Services
 
             script.Append("  window.__mdProcessVisibleImages(").Append(scopeVariable).Append(");");
             script.Append("  if (window.__mdProcessVisibleBlocks(").Append(scopeVariable).Append(", window.__mdBlockBudget) >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(").Append(scopeVariable).Append(");");
-            script.Append("  setTimeout(function(){");
-            script.Append("    window.__mdProcessVisibleImages(").Append(scopeVariable).Append(");");
-            script.Append("    if (window.__mdProcessVisibleBlocks(").Append(scopeVariable).Append(", window.__mdBlockBudget) >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(").Append(scopeVariable).Append(");");
-            script.Append("  }, 120);");
+
+            if (includeDeferredPass)
+            {
+                script.Append("  setTimeout(function(){");
+                script.Append("    window.__mdProcessVisibleImages(").Append(scopeVariable).Append(");");
+                script.Append("    if (window.__mdProcessVisibleBlocks(").Append(scopeVariable).Append(", window.__mdBlockBudget) >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(").Append(scopeVariable).Append(");");
+                script.Append("  }, 120);");
+            }
+        }
+
+        private bool BlockNeedsHeavyProcessing(MarkdownBlock block)
+        {
+            return block != null && BlockNeedsHeavyProcessing(block.Text);
+        }
+
+        private bool BlockNeedsHeavyProcessing(string markdown)
+        {
+            var text = markdown ?? string.Empty;
+            if (text.Length == 0) return false;
+
+            return text.IndexOf("![", StringComparison.Ordinal) >= 0
+                || text.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("```", StringComparison.Ordinal) >= 0
+                || text.IndexOf("~~~", StringComparison.Ordinal) >= 0
+                || text.IndexOf("$$", StringComparison.Ordinal) >= 0
+                || text.IndexOf("\\(", StringComparison.Ordinal) >= 0
+                || text.IndexOf("\\[", StringComparison.Ordinal) >= 0
+                || text.IndexOf("```mermaid", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("```math", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private string EnhanceHtmlFragment(string html)

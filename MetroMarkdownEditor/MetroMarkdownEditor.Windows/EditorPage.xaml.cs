@@ -30,6 +30,8 @@ namespace MetroMarkdownEditor.Windows
         
         // 防抖动计时器：避免每敲一个字符就触发高亮和渲染，提高性能
         private readonly DispatcherTimer _typingTimer;
+        private readonly DispatcherTimer _syntaxTimer;
+        private readonly DispatcherTimer _hotPreviewTimer;
         private readonly DispatcherTimer _previewScrollTimer;
         
         // 渲染服务：负责生成 HTML 和 CSS
@@ -54,6 +56,12 @@ namespace MetroMarkdownEditor.Windows
         private ElementTheme _lastTheme = ElementTheme.Light; // 记录上次主题，用于检测切换
         private double _pendingPreviewScrollRatio;
         private int _renderGeneration;
+        private bool _pendingSyntaxRefresh;
+        private bool _pendingColdPreviewRefresh;
+        private MarkdownBlock _pendingHotBlock;
+        private bool _isPreviewOperationRunning;
+        private bool _pendingPreviewRenderRequest;
+        private bool _suppressEditorScrollSync;
         
         // 编辑器的内部滚动条引用，用于同步滚动
         private ScrollViewer _editorScrollViewer;
@@ -78,8 +86,14 @@ namespace MetroMarkdownEditor.Windows
             InitializeComponent();
 
             // 初始化计时器
-            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
             _typingTimer.Tick += TypingTimer_Tick;
+
+            _syntaxTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+            _syntaxTimer.Tick += SyntaxTimer_Tick;
+
+            _hotPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+            _hotPreviewTimer.Tick += HotPreviewTimer_Tick;
 
             _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _undoTimer.Tick += UndoTimer_Tick;
@@ -180,6 +194,8 @@ namespace MetroMarkdownEditor.Windows
             }
 
             _typingTimer.Stop();
+            _syntaxTimer.Stop();
+            _hotPreviewTimer.Stop();
             _undoTimer.Stop();
             _previewScrollTimer.Stop();
             
@@ -200,13 +216,15 @@ namespace MetroMarkdownEditor.Windows
             if (!isCtrlPressed) return;
             
             // Ctrl+S: 保存
+            if (args.VirtualKey == global::Windows.System.VirtualKey.S && !EditorBox.FocusState.Equals(FocusState.Unfocused))
+            {
+                // 编辑框有焦点时，由 EditorBox_KeyDown 处理，避免重复触发两次保存
+                return;
+            }
             if (args.VirtualKey == global::Windows.System.VirtualKey.S)
             {
                 args.Handled = true;
-                if (ViewModel != null)
-                {
-                    var _ = ViewModel.SaveAsync();
-                }
+                var _ = SaveFromShortcutAsync();
                 return;
             }
             
@@ -266,6 +284,8 @@ namespace MetroMarkdownEditor.Windows
             {
                 SyncEditorText();
             }
+
+            UpdateEditorBottomSpacer();
         }
 
         /// <summary>
@@ -275,6 +295,7 @@ namespace MetroMarkdownEditor.Windows
         {
             if (ViewModel == null || ViewModel.ViewMode != EditorViewMode.Split) return;
             if (!_isWebViewReady || PreviewWebView == null) return;
+            if (_suppressEditorScrollSync) return;
 
             var scroll = sender as ScrollViewer ?? _editorScrollViewer;
             if (scroll == null) return;
@@ -303,6 +324,7 @@ namespace MetroMarkdownEditor.Windows
         private async Task SyncPreviewScrollAsync(double ratio)
         {
             if (!_isWebViewReady || PreviewWebView == null) return;
+            if (_isPreviewOperationRunning) return;
 
             var clamped = Math.Max(0.0, Math.Min(1.0, ratio));
             
@@ -328,7 +350,18 @@ namespace MetroMarkdownEditor.Windows
                 return;
             }
 
+            if (_isPreviewOperationRunning)
+            {
+                _previewScrollTimer.Start();
+                return;
+            }
+
             var _ = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
+        }
+
+        private void EditorPage_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateEditorBottomSpacer();
         }
 
         // 当全局主题 ViewModel 变化时，强制刷新编辑器高亮和预览
@@ -416,10 +449,7 @@ namespace MetroMarkdownEditor.Windows
             if (isCtrlPressed && e.Key == global::Windows.System.VirtualKey.S)
             {
                 e.Handled = true;
-                if (ViewModel != null)
-                {
-                    var _ = ViewModel.SaveAsync();
-                }
+                var _ = SaveFromShortcutAsync();
                 return;
             }
 
@@ -550,63 +580,150 @@ namespace MetroMarkdownEditor.Windows
         {
             if (ViewModel == null) return;
             if (!ShouldRenderPreview()) return;
-
-            var generation = ++_renderGeneration;
-
-            var theme = GetCurrentTheme();
-            ViewModel.SetTheme(theme);
-
-            // 如果骨架未加载或主题改变，重新加载基础 HTML/CSS
-            if (!_skeletonLoaded || theme != _lastTheme)
+            if (_isPreviewOperationRunning)
             {
-                _isWebViewReady = false;
-                await _renderService.LoadSkeletonAsync(PreviewWebView, ViewModel.PreviewCss, theme);
-                _skeletonLoaded = true;
-                _lastTheme = theme;
-            }
-
-            if (!_isWebViewReady)
-            {
-                _pendingRender = true;
+                _pendingPreviewRenderRequest = true;
                 return;
             }
 
-            var nextBlocks = ViewModel.PreviewBlocks ?? new List<MarkdownBlock>();
-            bool appliedBlockDiff = false;
+            _isPreviewOperationRunning = true;
+            _pendingPreviewRenderRequest = false;
 
-            if (_skeletonLoaded && CanApplyBlockDiff(_lastBlocks, nextBlocks))
+            try
             {
-                var changedBlocks = FindChangedBlocks(_lastBlocks, nextBlocks);
-                if (changedBlocks.Count == 0)
+                var generation = ++_renderGeneration;
+
+                var theme = GetCurrentTheme();
+                ViewModel.SetTheme(theme);
+
+                // 如果骨架未加载或主题改变，重新加载基础 HTML/CSS
+                if (!_skeletonLoaded || theme != _lastTheme)
                 {
-                    _lastBlocks = nextBlocks;
+                    _isWebViewReady = false;
+                    await _renderService.LoadSkeletonAsync(PreviewWebView, ViewModel.PreviewCss, theme);
+                    _skeletonLoaded = true;
+                    _lastTheme = theme;
+                }
+
+                if (!_isWebViewReady)
+                {
+                    _pendingRender = true;
                     return;
                 }
 
-                if (changedBlocks.Count > 0 && changedBlocks.Count <= 4)
-                {
-                    foreach (var block in changedBlocks)
-                    {
-                        if (generation != _renderGeneration)
-                        {
-                            return;
-                        }
+                var nextBlocks = ViewModel.PreviewBlocks ?? new List<MarkdownBlock>();
+                bool appliedBlockDiff = false;
 
-                        await _renderService.UpdateBlockAsync(PreviewWebView, block);
+                if (_skeletonLoaded && CanApplyBlockDiff(_lastBlocks, nextBlocks))
+                {
+                    var changedBlocks = FindChangedBlocks(_lastBlocks, nextBlocks);
+                    if (changedBlocks.Count == 0)
+                    {
+                        _lastBlocks = nextBlocks;
+                        return;
                     }
 
-                    appliedBlockDiff = true;
+                    if (changedBlocks.Count > 0 && changedBlocks.Count <= 4)
+                    {
+                        foreach (var block in changedBlocks)
+                        {
+                            if (generation != _renderGeneration)
+                            {
+                                return;
+                            }
+
+                            await _renderService.UpdateBlockAsync(PreviewWebView, block);
+                        }
+
+                        appliedBlockDiff = true;
+                    }
+                }
+
+                if (!appliedBlockDiff)
+                {
+                    await _renderService.UpdateContentAsync(PreviewWebView, ViewModel.PreviewContent ?? string.Empty, isMarkdown: false);
+                }
+
+                if (generation == _renderGeneration)
+                {
+                    _lastBlocks = nextBlocks;
                 }
             }
-
-            if (!appliedBlockDiff)
+            finally
             {
-                await _renderService.UpdateContentAsync(PreviewWebView, ViewModel.PreviewContent ?? string.Empty, isMarkdown: false);
+                _isPreviewOperationRunning = false;
+                DrainQueuedPreviewWork();
+            }
+        }
+
+        private void DrainQueuedPreviewWork()
+        {
+            if (_pendingColdPreviewRefresh)
+            {
+                _typingTimer.Stop();
+                _typingTimer.Start();
+                return;
             }
 
-            if (generation == _renderGeneration)
+            if (_pendingPreviewRenderRequest)
             {
-                _lastBlocks = nextBlocks;
+                _pendingPreviewRenderRequest = false;
+                var _ = RenderPreviewAsync();
+            }
+        }
+
+        private void UpdateEditorBottomSpacer()
+        {
+            if (EditorBox == null) return;
+
+            double viewportHeight = 0;
+            if (_editorScrollViewer != null && _editorScrollViewer.ViewportHeight > 0)
+            {
+                viewportHeight = _editorScrollViewer.ViewportHeight;
+            }
+            else if (EditorPaneBorder != null && EditorPaneBorder.ActualHeight > 0)
+            {
+                viewportHeight = EditorPaneBorder.ActualHeight;
+            }
+            else if (ActualHeight > 0)
+            {
+                viewportHeight = ActualHeight;
+            }
+
+            if (viewportHeight <= 0) return;
+
+            var bottomPadding = Math.Max(24, Math.Min(44, viewportHeight * 0.06));
+            var currentPadding = EditorBox.Padding;
+            var updatedPadding = new Thickness(currentPadding.Left, 24, currentPadding.Right, bottomPadding);
+
+            if (!AreClose(currentPadding.Bottom, updatedPadding.Bottom) ||
+                !AreClose(currentPadding.Left, updatedPadding.Left) ||
+                !AreClose(currentPadding.Top, updatedPadding.Top) ||
+                !AreClose(currentPadding.Right, updatedPadding.Right))
+            {
+                EditorBox.Padding = updatedPadding;
+            }
+        }
+
+        private static bool AreClose(double left, double right)
+        {
+            return Math.Abs(left - right) < 0.5;
+        }
+
+        private async Task SaveFromShortcutAsync()
+        {
+            if (ViewModel == null || ViewModel.IsSaving)
+            {
+                return;
+            }
+
+            try
+            {
+                await ViewModel.SaveAsync();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Ignore duplicate/blocked writes from shortcut path; UI save state remains visible in the view model.
             }
         }
 
@@ -647,29 +764,38 @@ namespace MetroMarkdownEditor.Windows
             var change = AnalyzeChange(_lastEditorText, text);
             _lastEditorText = text;
 
-            bool hotRendered = false;
-            // 尝试局部更新 (Hot Render)
-            if (change.IsHot && change.LineIndex >= 0 && _skeletonLoaded && ShouldRenderPreview() && _isWebViewReady)
+            if (change.HasChange)
             {
-                var targetBlock = FindBlockForLine(change.LineIndex);
-                var updatedBlock = BuildUpdatedBlock(targetBlock, text);
-                if (updatedBlock != null)
-                {
-                    var _ = _renderService.UpdateBlockAsync(PreviewWebView, updatedBlock);
-                    UpdateLocalBlockCache(updatedBlock);
-                    hotRendered = true;
-                }
-            }
-
-            // 触发高亮计时器 (防抖动)
-            if (change.HasChange && (change.RequiresCold || !hotRendered))
-            {
+                _hotPreviewTimer.Stop();
+                _pendingHotBlock = null;
+                _pendingSyntaxRefresh = true;
+                _pendingColdPreviewRefresh = true;
+                _syntaxTimer.Stop();
+                _syntaxTimer.Start();
                 _typingTimer.Stop();
                 _typingTimer.Start();
             }
+            else if (!change.HasChange)
+            {
+                _typingTimer.Stop();
+                _syntaxTimer.Stop();
+                _hotPreviewTimer.Stop();
+                _pendingHotBlock = null;
+                _pendingSyntaxRefresh = false;
+            }
             else
             {
-                _typingTimer.Stop(); 
+                if (_pendingColdPreviewRefresh || _pendingSyntaxRefresh)
+                {
+                    _syntaxTimer.Stop();
+                    _syntaxTimer.Start();
+                    _typingTimer.Stop();
+                    _typingTimer.Start();
+                }
+                else
+                {
+                    _typingTimer.Stop();
+                }
             }
         }
 
@@ -679,25 +805,90 @@ namespace MetroMarkdownEditor.Windows
             SaveSnapshot(); // 保存撤销快照
         }
 
+        private void SyntaxTimer_Tick(object sender, object e)
+        {
+            _syntaxTimer.Stop();
+
+            if (!_pendingSyntaxRefresh)
+            {
+                return;
+            }
+
+            if (_isPreviewOperationRunning)
+            {
+                _syntaxTimer.Start();
+                return;
+            }
+
+            var scroll = FindScrollViewer(EditorBox);
+            double? vertical = scroll != null ? (double?)scroll.VerticalOffset : null;
+
+            try
+            {
+                _suppressEditorScrollSync = true;
+                HighlightMarkdownSyntax(forceFullDocument: false);
+                _pendingSyntaxRefresh = false;
+
+                if (scroll != null && vertical.HasValue)
+                {
+                    scroll.ChangeView(null, vertical, null, true);
+                }
+            }
+            finally
+            {
+                _suppressEditorScrollSync = false;
+            }
+        }
+
+        private async void HotPreviewTimer_Tick(object sender, object e)
+        {
+            _hotPreviewTimer.Stop();
+
+            var block = _pendingHotBlock;
+            _pendingHotBlock = null;
+
+            if (block == null || PreviewWebView == null || !_isWebViewReady || !ShouldRenderPreview())
+            {
+                return;
+            }
+
+            if (_isPreviewOperationRunning)
+            {
+                _pendingHotBlock = block;
+                _hotPreviewTimer.Start();
+                return;
+            }
+
+            _isPreviewOperationRunning = true;
+            try
+            {
+                await _renderService.UpdateBlockAsync(PreviewWebView, block);
+                UpdateLocalBlockCache(block);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                _isPreviewOperationRunning = false;
+                DrainQueuedPreviewWork();
+            }
+        }
+
         private void TypingTimer_Tick(object sender, object e)
         {
             _typingTimer.Stop();
 
-            // 保存滚动位置，因为高亮可能导致重绘
-            var scroll = FindScrollViewer(EditorBox);
-            double? vertical = scroll != null ? (double?)scroll.VerticalOffset : null;
-
-            HighlightMarkdownSyntax(forceFullDocument: false);
-
-            if (ViewModel != null)
+            if (_isPreviewOperationRunning)
             {
-                ViewModel.RefreshPreview();
+                _typingTimer.Start();
+                return;
             }
 
-            // 恢复滚动位置
-            if (scroll != null && vertical.HasValue)
+            if (_pendingColdPreviewRefresh && ViewModel != null)
             {
-                scroll.ChangeView(null, vertical, null, true);
+                _pendingColdPreviewRefresh = false;
+                ViewModel.RefreshPreview();
             }
         }
 
@@ -928,6 +1119,7 @@ namespace MetroMarkdownEditor.Windows
                 ViewModel.RefreshPreview();
             }
             var _ = RenderPreviewAsync();
+            UpdateEditorBottomSpacer();
         }
 
         // ==========================================
@@ -1043,6 +1235,7 @@ namespace MetroMarkdownEditor.Windows
                 HighlightMarkdownSyntax(forceFullDocument: true);
                 
                 ResetUndoRedo();
+                UpdateEditorBottomSpacer();
             }
         }
 

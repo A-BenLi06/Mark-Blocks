@@ -7,7 +7,8 @@
     xmlns:common="using:MetroMarkdownEditor.Common"
     xmlns:converters="using:MetroMarkdownEditor.Converters"
     mc:Ignorable="d"
-    DataContext="{Binding Editor, Source={StaticResource Locator}}">
+    DataContext="{Binding Editor, Source={StaticResource Locator}}"
+    SizeChanged="EditorPage_SizeChanged">
 
     <Page.Resources>
         <converters:StringTruncateConverter x:Key="StringTruncateConverter" />
@@ -285,37 +286,26 @@
                 <ColumnDefinition Width="{Binding ViewMode, Converter={StaticResource ViewModeToGridLengthConverter}, ConverterParameter=Preview}" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0"
+            <Border x:Name="EditorPaneBorder"
+                    Grid.Column="0"
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Editor}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="40" />
-                    </Grid.RowDefinitions>
-
-                    <RichEditBox x:Name="EditorBox" Grid.Row="0"
-                                     TextWrapping="Wrap"
-                                     AcceptsReturn="True"
-                                     IsSpellCheckEnabled="False"
-                                     FontFamily="Consolas"
-                                     FontSize="16"
-                                     BorderThickness="0"
-                                     Background="Transparent"
-                                     Padding="30,24,30,24"
-                                     Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                                     TextChanged="EditorBox_TextChanged"
-                                     KeyDown="EditorBox_KeyDown" />
-
-                    <Border Grid.Row="1"
-                            Background="Transparent"
-                            Height="40"
-                            HorizontalAlignment="Stretch"
-                            VerticalAlignment="Stretch" />
-                </Grid>
+                <RichEditBox x:Name="EditorBox"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             IsSpellCheckEnabled="False"
+                             FontFamily="Consolas"
+                             FontSize="16"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Padding="30,24,30,24"
+                             Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                             TextChanged="EditorBox_TextChanged"
+                             KeyDown="EditorBox_KeyDown" />
             </Border>
 
-            <Border Grid.Column="1"
+            <Border x:Name="PreviewPaneBorder"
+                    Grid.Column="1"
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     Visibility="{Binding ViewMode, Converter={StaticResource ViewModeToVisibilityConverter}, ConverterParameter=Preview}">
                 <!-- Centered WebView for preview -->
