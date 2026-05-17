@@ -43,6 +43,8 @@ namespace MetroMarkdownEditor.ViewModels
             OpenDocuments = new ObservableCollection<DocumentViewModel>();
 
             _themeService.ThemeChanged += (s, e) => UpdatePreview();
+            MarkdownSettingsService.Instance.SettingsChanged += (s, e) => UpdatePreview();
+            EditorSettingsService.Instance.SettingsChanged += (s, e) => UpdatePreview();
 
             NewCommand = new RelayCommand(async _ => await CreateNewAsync());
             OpenCommand = new RelayCommand(async _ => await OpenFromPickerAsync());
@@ -574,7 +576,7 @@ namespace MetroMarkdownEditor.ViewModels
             }
             else
             {
-                contentToSave = ActiveDocument.Content ?? string.Empty;
+                contentToSave = EditorSettingsService.Instance.NormalizeContentForSave(ActiveDocument.Content ?? string.Empty);
             }
 
 #if WINDOWS_PHONE_APP

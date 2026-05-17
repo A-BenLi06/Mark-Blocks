@@ -87,6 +87,8 @@ namespace MetroMarkdownEditor
             // 我为你生成了一个随机的 GUID：28a24559-0017-4959-9b93-669e20032908
             // 使用 GUID 字符串作为 ID 可以解决这个 FormatException
             args.Request.ApplicationCommands.Add(new SettingsCommand("28a24559-0017-4959-9b93-669e20032908", "Personalization", _ => ShowThemeSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("0f0593fa-4f39-4f38-8e43-71c81c909f7a", "Markdown", _ => ShowMarkdownSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("276ed2b5-589f-4cb7-ae60-09de6b11f873", "Editor", _ => ShowEditorSettings()));
             args.Request.ApplicationCommands.Add(new SettingsCommand("c5f5e4f5-71d8-4a0c-bd27-3f58b6c6fbc0", "Auto Save", _ => ShowAutoSaveSettings()));
             args.Request.ApplicationCommands.Add(new SettingsCommand("a1b2c3d4-5e6f-7a8b-9c0d-e1f2a3b4c5d6", "Dev", _ => ShowDevSettings()));
         }
@@ -107,6 +109,18 @@ namespace MetroMarkdownEditor
         {
             var flyout = new AutoSaveSettings();
             flyout.DataContext = Services.AutoSaveService.Instance;
+            flyout.Show();
+        }
+
+        private void ShowMarkdownSettings()
+        {
+            var flyout = new MarkdownSettings();
+            flyout.Show();
+        }
+
+        private void ShowEditorSettings()
+        {
+            var flyout = new EditorSettings();
             flyout.Show();
         }
 

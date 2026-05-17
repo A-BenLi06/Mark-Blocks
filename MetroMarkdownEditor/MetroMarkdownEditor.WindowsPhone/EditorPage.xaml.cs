@@ -31,6 +31,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private readonly Stack<string> _redoStack = new Stack<string>();
 
         private bool _isUndoRedoLocked;
+        private bool _isAutoPairEdit;
         private string _lastEditorText = string.Empty;
         private bool _skeletonLoaded;
         private bool _isWebViewReady;
@@ -75,8 +76,11 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             // Register EditorBox Loaded for robust font handling after navigation
             EditorBox.Loaded += EditorBox_Loaded;
+            MarkdownSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
 
             ConfigureAutoSaveTimer();
+            ApplyRuntimeEditorSettings();
         }
 
         #endregion
@@ -165,6 +169,8 @@ namespace MetroMarkdownEditor.WindowsPhone
             }
 
             _autoSave.SettingsChanged -= OnAutoSaveSettingsChanged;
+            MarkdownSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
 
             // Stop timers
             _typingTimer.Stop();
@@ -358,6 +364,10 @@ namespace MetroMarkdownEditor.WindowsPhone
             string text;
             editor.Document.GetText(TextGetOptions.None, out text);
             text = (text ?? "").Replace('\r', '\n').TrimEnd('\0', '\n');
+            if (!_isAutoPairEdit)
+            {
+                TryApplyAutoPair(editor, ref text);
+            }
 
             ViewModel.SetContentFromEditor(text);
             _lastEditorText = text;
@@ -373,6 +383,111 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 _autoSaveTimer.Stop();
                 _autoSaveTimer.Start();
+            }
+
+            KeepCaretCenteredIfNeeded();
+        }
+
+        private bool TryApplyAutoPair(RichEditBox editor, ref string normalizedText)
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.AutoPairBracketsAndQuotes && !settings.AutoPairCommonMarkdownSyntax) return false;
+            if (string.IsNullOrEmpty(normalizedText) || _lastEditorText == null) return false;
+            if (normalizedText.Length != _lastEditorText.Length + 1) return false;
+
+            var insertedIndex = 0;
+            while (insertedIndex < _lastEditorText.Length
+                   && insertedIndex < normalizedText.Length
+                   && _lastEditorText[insertedIndex] == normalizedText[insertedIndex])
+            {
+                insertedIndex++;
+            }
+
+            if (insertedIndex >= normalizedText.Length) return false;
+
+            var closing = GetAutoPairClosingText(normalizedText[insertedIndex], settings);
+            if (closing == null) return false;
+
+            var selection = editor.Document.Selection;
+            var caret = selection.StartPosition;
+            if (caret != insertedIndex + 1) return false;
+
+            try
+            {
+                _isAutoPairEdit = true;
+                selection.TypeText(closing);
+                selection.SetRange(caret, caret);
+
+                string refreshed;
+                editor.Document.GetText(TextGetOptions.None, out refreshed);
+                normalizedText = (refreshed ?? "").Replace('\r', '\n').TrimEnd('\0', '\n');
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                _isAutoPairEdit = false;
+            }
+        }
+
+        private static string GetAutoPairClosingText(char inserted, EditorSettingsService settings)
+        {
+            if (settings.AutoPairBracketsAndQuotes)
+            {
+                switch (inserted)
+                {
+                    case '(':
+                        return ")";
+                    case '[':
+                        return "]";
+                    case '{':
+                        return "}";
+                    case '"':
+                        return "\"";
+                    case '\'':
+                        return "'";
+                }
+            }
+
+            if (settings.AutoPairCommonMarkdownSyntax)
+            {
+                switch (inserted)
+                {
+                    case '*':
+                    case '_':
+                    case '~':
+                    case '`':
+                        return inserted.ToString();
+                }
+            }
+
+            return null;
+        }
+
+        private void KeepCaretCenteredIfNeeded()
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.TypewriterFocusModeEnabled || !settings.KeepCaretInMiddleWhenTypewriterModeEnabled) return;
+
+            try
+            {
+                var scrollViewer = FindScrollViewer(EditorBox);
+                if (scrollViewer == null || EditorBox?.Document == null) return;
+
+                Windows.Foundation.Rect rect;
+                int hit;
+                EditorBox.Document.Selection.GetRect(PointOptions.ClientCoordinates, out rect, out hit);
+                if (rect.Height <= 0) return;
+
+                var target = scrollViewer.VerticalOffset + rect.Top - (scrollViewer.ViewportHeight / 2) + rect.Height;
+                target = Math.Max(0, Math.Min(target, scrollViewer.ScrollableHeight));
+                scrollViewer.ChangeView(null, target, null, true);
+            }
+            catch
+            {
             }
         }
 
@@ -410,11 +525,96 @@ namespace MetroMarkdownEditor.WindowsPhone
                 return;
             }
 
+            if (isCtrl && e.Key == Windows.System.VirtualKey.C)
+            {
+                if (TryHandlePlainTextClipboard(cut: false))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            if (isCtrl && e.Key == Windows.System.VirtualKey.X)
+            {
+                if (TryHandlePlainTextClipboard(cut: true))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             if (e.Key == Windows.System.VirtualKey.Tab)
             {
                 e.Handled = true;
-                editor?.Document?.Selection?.TypeText("\t");
+                editor?.Document?.Selection?.TypeText(new string(' ', MarkdownSettingsService.Instance.CodeIndentSize));
             }
+        }
+
+        private bool TryHandlePlainTextClipboard(bool cut)
+        {
+#if WINDOWS_PHONE_APP
+            return false;
+#else
+            var settings = EditorSettingsService.Instance;
+            if (!settings.CopyMarkdownSourceAsPlainText && !settings.CopyCutWholeLinesWhenNoSelection)
+            {
+                return false;
+            }
+
+            var doc = EditorBox.Document;
+            if (doc == null) return false;
+
+            string fullText = string.Empty;
+            doc.GetText(TextGetOptions.None, out fullText);
+            if (fullText == null) fullText = string.Empty;
+
+            var selection = doc.Selection;
+            var start = selection.StartPosition;
+            var end = selection.EndPosition;
+            if (start > end) { var tmp = start; start = end; end = tmp; }
+
+            string textToCopy;
+            int replaceStart = start;
+            int replaceEnd = end;
+            var hasSelection = start != end;
+
+            if (!hasSelection)
+            {
+                if (!settings.CopyCutWholeLinesWhenNoSelection) return false;
+
+                replaceStart = start;
+                while (replaceStart > 0 && fullText[replaceStart - 1] != '\r' && fullText[replaceStart - 1] != '\n') replaceStart--;
+
+                replaceEnd = end;
+                while (replaceEnd < fullText.Length && fullText[replaceEnd] != '\r' && fullText[replaceEnd] != '\n') replaceEnd++;
+                if (replaceEnd < fullText.Length)
+                {
+                    replaceEnd++;
+                    if (replaceEnd < fullText.Length && fullText[replaceEnd - 1] == '\r' && fullText[replaceEnd] == '\n') replaceEnd++;
+                }
+
+                textToCopy = fullText.Substring(replaceStart, Math.Max(0, replaceEnd - replaceStart));
+            }
+            else
+            {
+                var range = doc.GetRange(start, end);
+                range.GetText(TextGetOptions.None, out textToCopy);
+            }
+
+            if (string.IsNullOrEmpty(textToCopy)) return false;
+
+            var package = new DataPackage();
+            package.SetText(settings.NormalizeLineEndings(textToCopy.TrimEnd('\0')));
+            Clipboard.SetContent(package);
+
+            if (cut)
+            {
+                var range = doc.GetRange(replaceStart, replaceEnd);
+                range.SetText(TextSetOptions.None, string.Empty);
+            }
+
+            return true;
+#endif
         }
 
         #endregion
@@ -725,6 +925,27 @@ namespace MetroMarkdownEditor.WindowsPhone
                 HighlightMarkdownSyntax();
                 var __ = RenderPreviewAsync();
             });
+        }
+
+        private void OnMarkdownOrEditorSettingsChanged(object sender, EventArgs e)
+        {
+            var _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+            {
+                ApplyRuntimeEditorSettings();
+                _skeletonLoaded = false;
+                HighlightMarkdownSyntax();
+                if (ViewModel != null)
+                {
+                    ViewModel.RefreshPreview();
+                }
+                var __ = RenderPreviewAsync();
+            });
+        }
+
+        private void ApplyRuntimeEditorSettings()
+        {
+            if (EditorBox == null) return;
+            EditorBox.IsSpellCheckEnabled = EditorSettingsService.Instance.IsSpellCheckEnabled;
         }
 
         #endregion
@@ -1048,6 +1269,23 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 // 忽略脚本执行错误
             }
+        }
+
+        private ScrollViewer FindScrollViewer(DependencyObject root)
+        {
+            if (root == null) return null;
+            var scrollViewer = root as ScrollViewer;
+            if (scrollViewer != null) return scrollViewer;
+
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                var result = FindScrollViewer(child);
+                if (result != null) return result;
+            }
+
+            return null;
         }
 
         #endregion

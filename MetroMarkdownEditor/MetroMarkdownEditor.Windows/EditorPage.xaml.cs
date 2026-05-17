@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Globalization;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using MetroMarkdownEditor.Services;
 using MetroMarkdownEditor.ViewModels;
@@ -62,6 +63,7 @@ namespace MetroMarkdownEditor.Windows
         private bool _isPreviewOperationRunning;
         private bool _pendingPreviewRenderRequest;
         private bool _suppressEditorScrollSync;
+        private bool _isAutoPairEdit;
         
         // 编辑器的内部滚动条引用，用于同步滚动
         private ScrollViewer _editorScrollViewer;
@@ -103,9 +105,12 @@ namespace MetroMarkdownEditor.Windows
 
             // 注册事件
             EditorBox.Loaded += EditorBox_Loaded;
+            MarkdownSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
             
             // 构造时尝试应用一次样式，作为兜底防止字体异常
             ApplyEditorFormatting();
+            ApplyRuntimeEditorSettings();
         }
 
         /// <summary>
@@ -201,6 +206,8 @@ namespace MetroMarkdownEditor.Windows
             
             // 取消全局快捷键监听
             Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
+            MarkdownSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
 
             base.OnNavigatedFrom(e);
         }
@@ -376,6 +383,28 @@ namespace MetroMarkdownEditor.Windows
             });
         }
 
+        private void OnMarkdownOrEditorSettingsChanged(object sender, EventArgs e)
+        {
+            var _ = Dispatcher.RunAsync(global::Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+            {
+                ApplyRuntimeEditorSettings();
+                _skeletonLoaded = false;
+                _lastBlocks = new List<MarkdownBlock>();
+                HighlightMarkdownSyntax(forceFullDocument: true);
+                if (ViewModel != null)
+                {
+                    ViewModel.RefreshPreview();
+                }
+                var __ = RenderPreviewAsync();
+            });
+        }
+
+        private void ApplyRuntimeEditorSettings()
+        {
+            if (EditorBox == null) return;
+            EditorBox.IsSpellCheckEnabled = EditorSettingsService.Instance.IsSpellCheckEnabled;
+        }
+
         // When theme changed, refresh highlighting and preview
         private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
@@ -468,6 +497,24 @@ namespace MetroMarkdownEditor.Windows
                 return;
             }
 
+            if (isCtrlPressed && e.Key == global::Windows.System.VirtualKey.C)
+            {
+                if (TryHandlePlainTextClipboard(cut: false))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            if (isCtrlPressed && e.Key == global::Windows.System.VirtualKey.X)
+            {
+                if (TryHandlePlainTextClipboard(cut: true))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             // Tab 键处理
             if (e.Key == global::Windows.System.VirtualKey.Tab)
             {
@@ -500,7 +547,7 @@ namespace MetroMarkdownEditor.Windows
             if (!isReverse)
             {
                 // 普通 Tab：直接插入
-                doc.Selection.TypeText("\t");
+                doc.Selection.TypeText(new string(' ', MarkdownSettingsService.Instance.CodeIndentSize));
                 return;
             }
 
@@ -539,7 +586,7 @@ namespace MetroMarkdownEditor.Windows
 
                 if (!string.IsNullOrEmpty(line))
                 {
-                    // 优先删除 Tab，如果没有 Tab 则最多删除 4 个空格
+                    // 优先删除 Tab，如果没有 Tab 则删除当前代码缩进大小的空格
                     if (line[0] == '\t')
                     {
                         removed = 1;
@@ -548,7 +595,8 @@ namespace MetroMarkdownEditor.Windows
                     else
                     {
                         int spaceCount = 0;
-                        while (spaceCount < line.Length && spaceCount < 4 && line[spaceCount] == ' ') spaceCount++;
+                        var indentSize = MarkdownSettingsService.Instance.CodeIndentSize;
+                        while (spaceCount < line.Length && spaceCount < indentSize && line[spaceCount] == ' ') spaceCount++;
                         if (spaceCount > 0)
                         {
                             removed = spaceCount;
@@ -571,6 +619,75 @@ namespace MetroMarkdownEditor.Windows
             
             // 简单的选区恢复：起点不变，终点减去删除量
             doc.Selection.SetRange(Math.Max(lineStart, selStart - cumulativeRemoved), Math.Max(lineStart, selEnd - cumulativeRemoved));
+        }
+
+        private bool TryHandlePlainTextClipboard(bool cut)
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.CopyMarkdownSourceAsPlainText && !settings.CopyCutWholeLinesWhenNoSelection)
+            {
+                return false;
+            }
+
+            var doc = EditorBox.Document;
+            if (doc == null) return false;
+
+            string fullText = string.Empty;
+            doc.GetText(TextGetOptions.None, out fullText);
+            if (fullText == null) fullText = string.Empty;
+
+            var selection = doc.Selection;
+            var start = selection.StartPosition;
+            var end = selection.EndPosition;
+            if (start > end) { var tmp = start; start = end; end = tmp; }
+
+            string textToCopy;
+            int replaceStart = start;
+            int replaceEnd = end;
+            var hasSelection = start != end;
+
+            if (!hasSelection)
+            {
+                if (!settings.CopyCutWholeLinesWhenNoSelection)
+                {
+                    return false;
+                }
+
+                replaceStart = start;
+                while (replaceStart > 0 && fullText[replaceStart - 1] != '\r' && fullText[replaceStart - 1] != '\n') replaceStart--;
+
+                replaceEnd = end;
+                while (replaceEnd < fullText.Length && fullText[replaceEnd] != '\r' && fullText[replaceEnd] != '\n') replaceEnd++;
+                if (replaceEnd < fullText.Length)
+                {
+                    replaceEnd++;
+                    if (replaceEnd < fullText.Length && fullText[replaceEnd - 1] == '\r' && fullText[replaceEnd] == '\n') replaceEnd++;
+                }
+
+                textToCopy = fullText.Substring(replaceStart, Math.Max(0, replaceEnd - replaceStart));
+            }
+            else
+            {
+                var range = doc.GetRange(start, end);
+                range.GetText(TextGetOptions.None, out textToCopy);
+            }
+
+            if (string.IsNullOrEmpty(textToCopy))
+            {
+                return false;
+            }
+
+            var package = new DataPackage();
+            package.SetText(settings.NormalizeLineEndings(textToCopy.TrimEnd('\0')));
+            Clipboard.SetContent(package);
+
+            if (cut)
+            {
+                var range = doc.GetRange(replaceStart, replaceEnd);
+                range.SetText(TextSetOptions.None, string.Empty);
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -754,6 +871,11 @@ namespace MetroMarkdownEditor.Windows
                 text = text.Replace('\r', '\n').TrimEnd('\0', '\n');
             }
 
+            if (!_isAutoPairEdit && TryApplyAutoPair(ref text))
+            {
+                // text has been refreshed after inserting the paired character.
+            }
+
             ViewModel.SetContentFromEditor(text);
 
             // 重置 Undo 计时器 (防抖动)
@@ -796,6 +918,134 @@ namespace MetroMarkdownEditor.Windows
                 {
                     _typingTimer.Stop();
                 }
+            }
+
+            KeepCaretCenteredIfNeeded();
+        }
+
+        private bool TryApplyAutoPair(ref string normalizedText)
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.AutoPairBracketsAndQuotes && !settings.AutoPairCommonMarkdownSyntax)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(normalizedText) || _lastEditorText == null)
+            {
+                return false;
+            }
+
+            if (normalizedText.Length != _lastEditorText.Length + 1)
+            {
+                return false;
+            }
+
+            var insertedIndex = 0;
+            while (insertedIndex < _lastEditorText.Length
+                   && insertedIndex < normalizedText.Length
+                   && _lastEditorText[insertedIndex] == normalizedText[insertedIndex])
+            {
+                insertedIndex++;
+            }
+
+            if (insertedIndex >= normalizedText.Length)
+            {
+                return false;
+            }
+
+            var closing = GetAutoPairClosingText(normalizedText[insertedIndex], settings);
+            if (closing == null)
+            {
+                return false;
+            }
+
+            var selection = EditorBox.Document.Selection;
+            var caret = selection.StartPosition;
+            if (caret != insertedIndex + 1)
+            {
+                return false;
+            }
+
+            try
+            {
+                _isAutoPairEdit = true;
+                selection.TypeText(closing);
+                selection.SetRange(caret, caret);
+
+                string refreshed = string.Empty;
+                EditorBox.Document.GetText(TextGetOptions.None, out refreshed);
+                normalizedText = (refreshed ?? string.Empty).Replace('\r', '\n').TrimEnd('\0', '\n');
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                _isAutoPairEdit = false;
+            }
+        }
+
+        private static string GetAutoPairClosingText(char inserted, EditorSettingsService settings)
+        {
+            if (settings.AutoPairBracketsAndQuotes)
+            {
+                switch (inserted)
+                {
+                    case '(':
+                        return ")";
+                    case '[':
+                        return "]";
+                    case '{':
+                        return "}";
+                    case '"':
+                        return "\"";
+                    case '\'':
+                        return "'";
+                }
+            }
+
+            if (settings.AutoPairCommonMarkdownSyntax)
+            {
+                switch (inserted)
+                {
+                    case '*':
+                    case '_':
+                    case '~':
+                    case '`':
+                        return inserted.ToString();
+                }
+            }
+
+            return null;
+        }
+
+        private void KeepCaretCenteredIfNeeded()
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.TypewriterFocusModeEnabled || !settings.KeepCaretInMiddleWhenTypewriterModeEnabled)
+            {
+                return;
+            }
+
+            try
+            {
+                var scrollViewer = _editorScrollViewer ?? FindScrollViewer(EditorBox);
+                if (scrollViewer == null || EditorBox == null || EditorBox.Document == null) return;
+
+                global::Windows.Foundation.Rect rect;
+                int hit;
+                EditorBox.Document.Selection.GetRect(PointOptions.ClientCoordinates, out rect, out hit);
+                if (rect.Height <= 0) return;
+
+                var target = scrollViewer.VerticalOffset + rect.Top - (scrollViewer.ViewportHeight / 2) + rect.Height;
+                target = Math.Max(0, Math.Min(target, scrollViewer.ScrollableHeight));
+                scrollViewer.ChangeView(null, target, null, true);
+            }
+            catch
+            {
             }
         }
 

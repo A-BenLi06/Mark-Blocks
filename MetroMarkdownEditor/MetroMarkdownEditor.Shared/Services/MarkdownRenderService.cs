@@ -1,11 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Windows.Storage; 
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Markdig;
+using Markdig.Extensions.AutoIdentifiers;
+using Markdig.Extensions.EmphasisExtras;
+using Markdig.Extensions.SmartyPants;
+using Markdig.Extensions.Tables;
 
 namespace MetroMarkdownEditor.Services
 {
@@ -25,7 +31,8 @@ namespace MetroMarkdownEditor.Services
 
     public class MarkdownRenderService
     {
-        private readonly MarkdownPipeline _pipeline;
+        private MarkdownPipeline _pipeline;
+        private string _pipelineSignature;
 
         private static string _cachedJs = null;
         private static string _cachedCssDark = null;
@@ -43,13 +50,91 @@ namespace MetroMarkdownEditor.Services
 
         public MarkdownRenderService()
         {
-            _pipeline = new MarkdownPipelineBuilder()
-                .UseAdvancedExtensions()
-                .UseSoftlineBreakAsHardlineBreak()
-                .UseEmojiAndSmiley()          // 表情符号 :smile:
-                .UseMathematics()              // LaTeX 数学公式
-                .UseDiagrams()                 // Mermaid 图表
-                .Build();
+            RebuildPipeline();
+        }
+
+        private MarkdownPipeline GetPipeline()
+        {
+            var signature = MarkdownSettingsService.Instance.BuildSignature() + "|" + EditorSettingsService.Instance.EnableEmojiAutocomplete;
+            if (_pipeline == null || _pipelineSignature != signature)
+            {
+                RebuildPipeline();
+            }
+
+            return _pipeline;
+        }
+
+        private void RebuildPipeline()
+        {
+            var markdownSettings = MarkdownSettingsService.Instance;
+            var editorSettings = EditorSettingsService.Instance;
+            var builder = new MarkdownPipelineBuilder();
+
+            if (!markdownSettings.StrictMode)
+            {
+                builder.UseAbbreviations();
+                builder.UseCitations();
+                builder.UseCustomContainers();
+                builder.UseDefinitionLists();
+                builder.UseFigures();
+                builder.UseFooters();
+                builder.UseFootnotes();
+                builder.UseGridTables();
+                builder.UseListExtras();
+                builder.UseGenericAttributes();
+                builder.UseYamlFrontMatter();
+            }
+
+            builder.UsePipeTables(new PipeTableOptions());
+            builder.UseTaskLists();
+            builder.UseAutoIdentifiers(AutoIdentifierOptions.GitHub);
+            builder.UseEmphasisExtras(BuildEmphasisOptions(markdownSettings));
+
+            if (markdownSettings.AutoLinks)
+            {
+                builder.UseAutoLinks();
+            }
+
+            if (editorSettings.EnableEmojiAutocomplete)
+            {
+                builder.UseEmojiAndSmiley();
+            }
+
+            if (markdownSettings.ShouldUseMathematics)
+            {
+                builder.UseMathematics();
+                if (!markdownSettings.InlineMath)
+                {
+                    builder.InlineParsers.RemoveAll(p => p.GetType().Name == "MathInlineParser");
+                }
+            }
+
+            if (markdownSettings.Diagrams)
+            {
+                builder.UseDiagrams();
+            }
+
+            if (markdownSettings.ShouldUseSmartyPants)
+            {
+                builder.UseSmartyPants(new SmartyPantOptions());
+            }
+
+            if (markdownSettings.ShouldUseSoftlineBreakAsHardlineBreak)
+            {
+                builder.UseSoftlineBreakAsHardlineBreak();
+            }
+
+            _pipeline = builder.Build();
+            _pipelineSignature = markdownSettings.BuildSignature() + "|" + editorSettings.EnableEmojiAutocomplete;
+        }
+
+        private static EmphasisExtraOptions BuildEmphasisOptions(MarkdownSettingsService settings)
+        {
+            var options = EmphasisExtraOptions.Strikethrough;
+            if (settings.Subscript) options |= EmphasisExtraOptions.Subscript;
+            if (settings.Superscript) options |= EmphasisExtraOptions.Superscript;
+            if (settings.Highlight) options |= EmphasisExtraOptions.Marked;
+            return options;
         }
 
         private async Task<string> ReadAssetFileAsync(string path)
@@ -103,11 +188,14 @@ namespace MetroMarkdownEditor.Services
                 _cachedMermaidJs = await ReadAssetFileAsync("Assets/Mermaid/mermaid7.min.js"); // 确保这里是 v7 版本
 
             string currentCssContent = (theme == ElementTheme.Dark) ? _cachedCssDark : _cachedCssLight;
+            var markdownSettings = MarkdownSettingsService.Instance;
 
             // 颜色变量
             var bodyColor = theme == ElementTheme.Dark ? "#e6e6e6" : "#24292f";
             var bgColor = theme == ElementTheme.Dark ? "#1e1e1e" : "#ffffff";
             var borderColor = "#dfe2e5"; 
+            var codeWhiteSpace = markdownSettings.AutoWrapLongLines ? "pre-wrap" : "pre";
+            var codeWordBreak = markdownSettings.AutoWrapLongLines ? "break-word" : "normal";
 
             // 字号配置
             string baseFontSize = "20px";
@@ -178,7 +266,23 @@ namespace MetroMarkdownEditor.Services
             sb.Append("img { max-width: 100%; height: auto; display: block; margin: 10px 0; border-radius: 4px; }");
             sb.Append("pre { margin: 1em 0; padding: 0; text-align: left; }");
             sb.Append($"code {{ font-family: 'Consolas', 'Courier New', monospace; font-size: {codeFontSize}; }}");
-            sb.Append(".hljs { border-radius: 0; padding: 0.8em; overflow-x: auto; display: block; }");
+            sb.Append(".hljs { border-radius: 0; padding: 0.8em; overflow-x: auto; display: block; white-space: " + codeWhiteSpace + "; word-break: " + codeWordBreak + "; }");
+            sb.Append("pre code { white-space: " + codeWhiteSpace + "; word-break: " + codeWordBreak + "; }");
+            if (markdownSettings.DisplayLineNumbersForCodeFences)
+            {
+                sb.Append("pre.line-numbered code { display: table; width: 100%; counter-reset: code-line; }");
+                sb.Append("pre.line-numbered .code-line { display: table-row; }");
+                sb.Append("pre.line-numbered .line-no { display: table-cell; width: 3em; padding-right: 1em; text-align: right; color: #8b949e; user-select: none; opacity: .7; }");
+                sb.Append("pre.line-numbered .line-code { display: table-cell; }");
+            }
+            if (markdownSettings.IndentFirstLineOfParagraphs)
+            {
+                sb.Append("p { text-indent: 2em; }");
+            }
+            if (markdownSettings.VisibleLineBreaks)
+            {
+                sb.Append("br:after { content: '\\21B5'; color: #8b949e; opacity: .7; font-size: .85em; }");
+            }
 
             // 表格与引用
             sb.Append(".table-wrapper { overflow-x: auto; margin: 16px 0; border: none; }");
@@ -187,8 +291,12 @@ namespace MetroMarkdownEditor.Services
             sb.Append("th { border-bottom: 1px solid " + borderColor + "; font-weight: 600; text-align: left; }");
             sb.Append("tr:nth-child(2n) { background-color: rgba(127,127,127,0.1); }");
             sb.Append("blockquote { border-left: 4px solid " + borderColor + "; padding: 0 1em; color: #6a737d; margin: 10px 0; }");
+            sb.Append(".alert { padding: .65em 1em; border-radius: 4px; }");
+            sb.Append(".alert-title { margin: 0 0 .35em 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0; }");
             sb.Append(".alert-note { border-left-color: #0969da; background-color: rgba(9, 105, 218, 0.1); color: inherit; }");
+            sb.Append(".alert-tip, .alert-important { border-left-color: #1a7f37; background-color: rgba(26, 127, 55, 0.1); color: inherit; }");
             sb.Append(".alert-warning { border-left-color: #9a6700; background-color: rgba(154, 103, 0, 0.1); color: inherit; }");
+            sb.Append(".alert-caution { border-left-color: #cf222e; background-color: rgba(207, 34, 46, 0.1); color: inherit; }");
             sb.Append(".code-lang-label { position: absolute; top: 0; right: 0; padding: 4px 8px; font-family: 'Segoe UI', sans-serif; font-size: 11px; color: #abb2bf; background-color: rgba(0,0,0,0.3); border-bottom-left-radius: 4px; text-transform: lowercase; user-select: none; }");
             sb.Append(".math { overflow-x: auto; }");
 
@@ -586,7 +694,7 @@ namespace MetroMarkdownEditor.Services
         public async Task UpdateContentAsync(WebView webView, string content, bool isMarkdown = true)
         {
             if (webView == null) return;
-            string html = isMarkdown ? Markdown.ToHtml(content ?? string.Empty, _pipeline) : (content ?? string.Empty);
+            string html = isMarkdown ? EnhanceHtmlFragment(Markdown.ToHtml(content ?? string.Empty, GetPipeline())) : (content ?? string.Empty);
             var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(html));
             var script = new StringBuilder();
             
@@ -953,7 +1061,7 @@ namespace MetroMarkdownEditor.Services
             try { await webView.InvokeScriptAsync("eval", new[] { script.ToString() }); } catch { }
         }
 
-        public string ToHtml(string markdown) => Markdig.Markdown.ToHtml(markdown ?? string.Empty, _pipeline);
+        public string ToHtml(string markdown) => Markdig.Markdown.ToHtml(markdown ?? string.Empty, GetPipeline());
 
         private void AppendFragmentEnhancements(StringBuilder script, string scopeVariable)
         {
@@ -1049,6 +1157,7 @@ namespace MetroMarkdownEditor.Services
             script.Append("        code.setAttribute('data-hljs-ready', 'true');");
             script.Append("      }");
             script.Append("    }");
+            script.Append("    if (window.__mdEnhanceCodeFences) window.__mdEnhanceCodeFences(block);");
             script.Append("    if (typeof mermaid !== 'undefined') {");
             script.Append("      var mermaidTargets = block.querySelectorAll('code.language-mermaid, pre.mermaid code, div.mermaid');");
             script.Append("      var nodesToInit = [];");
@@ -1150,6 +1259,33 @@ namespace MetroMarkdownEditor.Services
             script.Append("  }");
 
             script.Append("  window.__mdProcessVisibleImages(").Append(scopeVariable).Append(");");
+
+            var showCodeLineNumbers = MarkdownSettingsService.Instance.DisplayLineNumbersForCodeFences ? "true" : "false";
+            script.Append("  window.__mdEnhanceCodeFences = function(root) {");
+            script.Append("    var host = root || document.getElementById('content');");
+            script.Append("    if (!host || !host.querySelectorAll) return;");
+            script.Append("    var codes = host.querySelectorAll('pre code');");
+            script.Append("    for (var codeIndex = 0; codeIndex < codes.length; codeIndex++) {");
+            script.Append("      var code = codes[codeIndex];");
+            script.Append("      var pre = code.parentNode;");
+            script.Append("      if (!pre) continue;");
+            script.Append("      if (").Append(showCodeLineNumbers).Append(") {");
+            script.Append("        if (code.getAttribute('data-line-numbered') === 'true') continue;");
+            script.Append("        var html = code.innerHTML || '';");
+            script.Append("        var lines = html.replace(/\\n$/, '').split('\\n');");
+            script.Append("        var out = '';");
+            script.Append("        for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {");
+            script.Append("          out += '<span class=\"code-line\"><span class=\"line-no\">' + (lineIndex + 1) + '</span><span class=\"line-code\">' + lines[lineIndex] + '</span></span>';");
+            script.Append("        }");
+            script.Append("        pre.className = (pre.className ? pre.className + ' ' : '') + 'line-numbered';");
+            script.Append("        code.innerHTML = out;");
+            script.Append("        code.setAttribute('data-line-numbered', 'true');");
+            script.Append("      } else {");
+            script.Append("        pre.className = (pre.className || '').replace(/\\bline-numbered\\b/g, '');");
+            script.Append("      }");
+            script.Append("    }");
+            script.Append("  };");
+
             script.Append("  if (window.__mdProcessVisibleBlocks(").Append(scopeVariable).Append(", window.__mdBlockBudget) >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(").Append(scopeVariable).Append(");");
 
             if (includeDeferredPass)
@@ -1189,7 +1325,68 @@ namespace MetroMarkdownEditor.Services
                 return string.Empty;
             }
 
-            return System.Text.RegularExpressions.Regex.Replace(html, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", "<img loading=\"lazy\" decoding=\"async\" data-src=\"$2\" data-placeholder-src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\"$1$3>");
+            var settings = MarkdownSettingsService.Instance;
+            var enhanced = html;
+
+            if (settings.GithubStyleAlert)
+            {
+                enhanced = EnhanceGithubAlerts(enhanced);
+            }
+
+            enhanced = ApplyDefaultCodeLanguage(enhanced, settings);
+
+            return Regex.Replace(enhanced, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", m =>
+            {
+                var before = m.Groups[1].Value;
+                var src = m.Groups[2].Value;
+                var after = m.Groups[3].Value;
+                return "<img" + before + " loading=\"lazy\" decoding=\"async\" data-src=\"" + src + "\" data-placeholder-src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\"" + after + ">";
+            });
+        }
+
+        private static string EnhanceGithubAlerts(string html)
+        {
+            return Regex.Replace(
+                html,
+                "<blockquote>\\s*<p>\\s*\\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\]\\s*(.*?)</p>",
+                m =>
+                {
+                    var kind = m.Groups[1].Value.ToLowerInvariant();
+                    var title = m.Groups[1].Value.ToUpperInvariant();
+                    var rest = m.Groups[2].Value;
+                    return "<blockquote class=\"alert alert-" + kind + "\"><p class=\"alert-title\">" + title + "</p>" + (string.IsNullOrWhiteSpace(rest) ? string.Empty : "<p>" + rest + "</p>");
+                },
+                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        }
+
+        private static string ApplyDefaultCodeLanguage(string html, MarkdownSettingsService settings)
+        {
+            if (settings.ApplyDefaultCodeLanguageWhen == DefaultCodeLanguageApplyMode.Never)
+            {
+                return html;
+            }
+
+            var language = SanitizeCodeLanguage(settings.DefaultCodeLanguage);
+            if (string.IsNullOrEmpty(language))
+            {
+                return html;
+            }
+
+            return Regex.Replace(html, "<pre><code(?![^>]*class=)([^>]*)>", "<pre><code class=\"language-" + language + "\"$1>", RegexOptions.IgnoreCase);
+        }
+
+        private static string SanitizeCodeLanguage(string language)
+        {
+            if (string.IsNullOrWhiteSpace(language)) return string.Empty;
+            var sb = new StringBuilder();
+            foreach (var c in language.Trim())
+            {
+                if (char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '+' || c == '#')
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString();
         }
 
         private static string NormalizeNewLines(string value) => (value ?? string.Empty).Replace("\r\n", "\n");
@@ -1237,7 +1434,7 @@ namespace MetroMarkdownEditor.Services
 
         private string BuildBlockHtml(MarkdownBlock block)
         {
-            var inner = EnhanceHtmlFragment(Markdown.ToHtml(block.Text ?? string.Empty, _pipeline));
+            var inner = EnhanceHtmlFragment(Markdown.ToHtml(block.Text ?? string.Empty, GetPipeline()));
             var sb = new StringBuilder();
             sb.Append("<div class=\"md-block\" data-block=\"").Append(block.Index).Append("\" data-start=\"").Append(block.StartLine).Append("\" data-end=\"").Append(block.EndLine).Append("\">");
             sb.Append(inner);

@@ -24,6 +24,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)Services\RecentFileService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\ThemeService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownRenderService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownSettingsService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\EditorSettingsService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\AutoSaveService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownHighlightingHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\BackgroundService.cs" />

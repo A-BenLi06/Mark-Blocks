@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using MetroMarkdownEditor.Services;
 using Windows.Storage;
 
 namespace MetroMarkdownEditor.ViewModels
@@ -100,7 +101,8 @@ namespace MetroMarkdownEditor.ViewModels
                 throw new InvalidOperationException("No file specified to save.");
             }
 
-            await FileIO.WriteTextAsync(target, Content ?? string.Empty);
+            var contentToSave = EditorSettingsService.Instance.NormalizeContentForSave(Content ?? string.Empty);
+            await FileIO.WriteTextAsync(target, contentToSave);
             File = target;
             Title = target.Name;
             IsDirty = false;

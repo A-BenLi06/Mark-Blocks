@@ -232,6 +232,112 @@
                                      GroupName="PreviewTheme"
                                      IsChecked="{Binding Theme.IsPreviewThemeTokyoNight, Source={StaticResource Locator}, Mode=TwoWay}"
                                      Margin="0,0,0,8" />
+
+                        <!-- Markdown Section -->
+                        <TextBlock Text="Markdown"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding Theme.AccentBrush, Source={StaticResource Locator}}"
+                                   Margin="0,24,0,12" />
+                        <ToggleSwitch Header="Strict Mode"
+                                      IsOn="{Binding MarkdownSettings.StrictMode, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Auto Links"
+                                  IsChecked="{Binding MarkdownSettings.AutoLinks, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Inline Math"
+                                  IsChecked="{Binding MarkdownSettings.InlineMath, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Subscript"
+                                  IsChecked="{Binding MarkdownSettings.Subscript, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Superscript"
+                                  IsChecked="{Binding MarkdownSettings.Superscript, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Highlight"
+                                  IsChecked="{Binding MarkdownSettings.Highlight, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="GitHub Style Alert"
+                                  IsChecked="{Binding MarkdownSettings.GithubStyleAlert, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Diagrams"
+                                  IsChecked="{Binding MarkdownSettings.Diagrams, Source={StaticResource Locator}, Mode=TwoWay}"
+                                  Margin="0,0,0,12" />
+                        <TextBlock Text="Heading Style"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,0,0,4" />
+                        <ComboBox SelectedIndex="{Binding MarkdownSettings.HeadingStyleIndex, Source={StaticResource Locator}, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="atx (#)" />
+                            <ComboBoxItem Content="setext (===)" />
+                        </ComboBox>
+                        <TextBlock Text="Code Fences"
+                                   FontSize="18"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,16,0,8" />
+                        <CheckBox Content="Display line numbers"
+                                  IsChecked="{Binding MarkdownSettings.DisplayLineNumbersForCodeFences, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Auto wrap long lines"
+                                  IsChecked="{Binding MarkdownSettings.AutoWrapLongLines, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <TextBlock Text="Default Code Language"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,8,0,4" />
+                        <TextBox Text="{Binding MarkdownSettings.DefaultCodeLanguage, Source={StaticResource Locator}, Mode=TwoWay}"
+                                 Margin="0,0,0,12" />
+                        <TextBlock Text="Whitespace / Line Break"
+                                   FontSize="18"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,4,0,8" />
+                        <CheckBox Content="Indent first line of paragraphs"
+                                  IsChecked="{Binding MarkdownSettings.IndentFirstLineOfParagraphs, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Visible &lt;br/&gt;"
+                                  IsChecked="{Binding MarkdownSettings.VisibleLineBreaks, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <ComboBox SelectedIndex="{Binding MarkdownSettings.WritingWhitespaceModeIndex, Source={StaticResource Locator}, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  Margin="0,4,0,20">
+                            <ComboBoxItem Content="Preserve whitespace and single line break" />
+                            <ComboBoxItem Content="Preserve sequential whitespace" />
+                            <ComboBoxItem Content="Collapse whitespace" />
+                        </ComboBox>
+
+                        <!-- Editor Section -->
+                        <TextBlock Text="Editor"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding Theme.AccentBrush, Source={StaticResource Locator}}"
+                                   Margin="0,0,0,12" />
+                        <CheckBox Content="Pretty indentation on save"
+                                  IsChecked="{Binding EditorSettings.PrettyIndentation, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Auto pair brackets and quotes"
+                                  IsChecked="{Binding EditorSettings.AutoPairBracketsAndQuotes, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Auto pair common Markdown syntax"
+                                  IsChecked="{Binding EditorSettings.AutoPairCommonMarkdownSyntax, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Enable autocomplete for Emojis"
+                                  IsChecked="{Binding EditorSettings.EnableEmojiAutocomplete, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Copy Markdown source as plain text"
+                                  IsChecked="{Binding EditorSettings.CopyMarkdownSourceAsPlainText, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Copy or cut whole lines when there is no selection"
+                                  IsChecked="{Binding EditorSettings.CopyCutWholeLinesWhenNoSelection, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <TextBlock Text="Default Line Ending"
+                                   FontSize="18"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,12,0,8" />
+                        <RadioButton Content="LF (Unix Style)"
+                                     GroupName="PhoneDefaultLineEnding"
+                                     IsChecked="{Binding EditorSettings.IsDefaultLineEndingLF, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <RadioButton Content="CRLF (Windows Style)"
+                                     GroupName="PhoneDefaultLineEnding"
+                                     IsChecked="{Binding EditorSettings.IsDefaultLineEndingCRLF, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <TextBlock Text="Spell Check"
+                                   FontSize="18"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,12,0,8" />
+                        <ComboBox SelectedIndex="{Binding EditorSettings.SpellCheckModeIndex, Source={StaticResource Locator}, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="Auto Detect Language" />
+                            <ComboBoxItem Content="Disabled" />
+                        </ComboBox>
+                        <TextBlock Text="Typewriter Mode"
+                                   FontSize="18"
+                                   Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                                   Margin="0,16,0,8" />
+                        <CheckBox Content="Keep caret in middle when enabled"
+                                  IsChecked="{Binding EditorSettings.KeepCaretInMiddleWhenTypewriterModeEnabled, Source={StaticResource Locator}, Mode=TwoWay}" />
+                        <CheckBox Content="Enable Typewriter / Focus Mode"
+                                  IsChecked="{Binding EditorSettings.TypewriterFocusModeEnabled, Source={StaticResource Locator}, Mode=TwoWay}" />
                     </StackPanel>
                 </ScrollViewer>
             </PivotItem>
