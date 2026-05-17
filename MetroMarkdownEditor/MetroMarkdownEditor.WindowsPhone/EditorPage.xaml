@@ -108,7 +108,7 @@
                 </AppBarButton>
 
                 <!-- Save -->
-                <AppBarButton x:Name="SaveButton" Label="Save" Command="{Binding SaveCommand}">
+                <AppBarButton x:Name="SaveButton" Label="Save" Click="SaveButton_Click">
                     <AppBarButton.Icon>
                         <SymbolIcon Symbol="Save" />
                     </AppBarButton.Icon>

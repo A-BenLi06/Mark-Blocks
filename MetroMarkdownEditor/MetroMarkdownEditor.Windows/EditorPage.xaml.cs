@@ -64,6 +64,9 @@ namespace MetroMarkdownEditor.Windows
         private bool _pendingPreviewRenderRequest;
         private bool _suppressEditorScrollSync;
         private bool _isAutoPairEdit;
+        private bool _editorTextDirty;
+        private DocumentViewModel _dirtyEditorDocument;
+        private double _lastPreviewScrollRatio = -1;
         
         // 编辑器的内部滚动条引用，用于同步滚动
         private ScrollViewer _editorScrollViewer;
@@ -88,7 +91,7 @@ namespace MetroMarkdownEditor.Windows
             InitializeComponent();
 
             // 初始化计时器
-            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
             _typingTimer.Tick += TypingTimer_Tick;
 
             _syntaxTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
@@ -100,7 +103,7 @@ namespace MetroMarkdownEditor.Windows
             _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _undoTimer.Tick += UndoTimer_Tick;
 
-            _previewScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
+            _previewScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
             _previewScrollTimer.Tick += PreviewScrollTimer_Tick;
 
             // 注册事件
@@ -182,6 +185,8 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
+            FlushPendingEditorText(refreshPreview: false);
+
             // 卸载监听，防止内存泄漏
             if (_themeViewModel != null)
             {
@@ -310,6 +315,11 @@ namespace MetroMarkdownEditor.Windows
             // 计算滚动比例 (0.0 - 1.0)
             var total = scroll.ScrollableHeight;
             var ratio = total > 0 ? scroll.VerticalOffset / total : 0;
+            if (Math.Abs(ratio - _pendingPreviewScrollRatio) < 0.002 && e.IsIntermediate)
+            {
+                return;
+            }
+
             _pendingPreviewScrollRatio = ratio;
 
             if (!e.IsIntermediate)
@@ -334,13 +344,15 @@ namespace MetroMarkdownEditor.Windows
             if (_isPreviewOperationRunning) return;
 
             var clamped = Math.Max(0.0, Math.Min(1.0, ratio));
-            
-            // 使用 eval 直接执行 JS，计算 WebView 内部高度并滚动到对应比例
-            var script = "(function(){var d=document.documentElement||document.body;var max=(d.scrollHeight||document.body.scrollHeight)-window.innerHeight;if(max<0){max=0;}window.scrollTo(0,max*" + clamped.ToString(CultureInfo.InvariantCulture) + ");})();";
+            if (Math.Abs(clamped - _lastPreviewScrollRatio) < 0.001)
+            {
+                return;
+            }
 
             try
             {
-                await PreviewWebView.InvokeScriptAsync("eval", new[] { script });
+                _lastPreviewScrollRatio = clamped;
+                await PreviewWebView.InvokeScriptAsync("__mdScrollToRatio", new[] { clamped.ToString(CultureInfo.InvariantCulture) });
             }
             catch
             {
@@ -417,6 +429,7 @@ namespace MetroMarkdownEditor.Windows
             }
             else if (e.PropertyName == "ActiveDocument")
             {
+                FlushPendingEditorText(refreshPreview: false);
                 SyncEditorText();
                 ResetUndoRedo();
                 
@@ -836,6 +849,7 @@ namespace MetroMarkdownEditor.Windows
 
             try
             {
+                FlushPendingEditorText(refreshPreview: false);
                 await ViewModel.SaveAsync();
             }
             catch (UnauthorizedAccessException)
@@ -844,8 +858,15 @@ namespace MetroMarkdownEditor.Windows
             }
         }
 
+        private async void SaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            await SaveFromShortcutAsync();
+        }
+
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
+            FlushPendingEditorText(refreshPreview: false);
+
             // Always navigate to MainPage, ignoring navigation history
             var frame = Frame;
             if (frame != null)
@@ -862,68 +883,31 @@ namespace MetroMarkdownEditor.Windows
             if (_isUndoRedoLocked) return;
             if (ViewModel == null || ViewModel.ActiveDocument == null) return;
 
-            string text = string.Empty;
-            EditorBox.Document.GetText(TextGetOptions.None, out text);
-
-            // 规范化换行符
-            if (text != null)
+            if (!_isAutoPairEdit)
             {
-                text = text.Replace('\r', '\n').TrimEnd('\0', '\n');
+                TryApplyAutoPairAtCaret();
             }
 
-            if (!_isAutoPairEdit && TryApplyAutoPair(ref text))
-            {
-                // text has been refreshed after inserting the paired character.
-            }
-
-            ViewModel.SetContentFromEditor(text);
+            _editorTextDirty = true;
+            _dirtyEditorDocument = ViewModel.ActiveDocument;
 
             // 重置 Undo 计时器 (防抖动)
             _undoTimer.Stop();
             _undoTimer.Start();
 
-            // 分析变更类型 (热更新 vs 冷更新)
-            var change = AnalyzeChange(_lastEditorText, text);
-            _lastEditorText = text;
-
-            if (change.HasChange)
-            {
-                _hotPreviewTimer.Stop();
-                _pendingHotBlock = null;
-                _pendingSyntaxRefresh = true;
-                _pendingColdPreviewRefresh = true;
-                _syntaxTimer.Stop();
-                _syntaxTimer.Start();
-                _typingTimer.Stop();
-                _typingTimer.Start();
-            }
-            else if (!change.HasChange)
-            {
-                _typingTimer.Stop();
-                _syntaxTimer.Stop();
-                _hotPreviewTimer.Stop();
-                _pendingHotBlock = null;
-                _pendingSyntaxRefresh = false;
-            }
-            else
-            {
-                if (_pendingColdPreviewRefresh || _pendingSyntaxRefresh)
-                {
-                    _syntaxTimer.Stop();
-                    _syntaxTimer.Start();
-                    _typingTimer.Stop();
-                    _typingTimer.Start();
-                }
-                else
-                {
-                    _typingTimer.Stop();
-                }
-            }
+            _hotPreviewTimer.Stop();
+            _pendingHotBlock = null;
+            _pendingSyntaxRefresh = true;
+            _pendingColdPreviewRefresh = true;
+            _syntaxTimer.Stop();
+            _syntaxTimer.Start();
+            _typingTimer.Stop();
+            _typingTimer.Start();
 
             KeepCaretCenteredIfNeeded();
         }
 
-        private bool TryApplyAutoPair(ref string normalizedText)
+        private bool TryApplyAutoPairAtCaret()
         {
             var settings = EditorSettingsService.Instance;
             if (!settings.AutoPairBracketsAndQuotes && !settings.AutoPairCommonMarkdownSyntax)
@@ -931,38 +915,36 @@ namespace MetroMarkdownEditor.Windows
                 return false;
             }
 
-            if (string.IsNullOrEmpty(normalizedText) || _lastEditorText == null)
+            var selection = EditorBox.Document.Selection;
+            var caret = selection.StartPosition;
+            if (caret <= 0 || selection.EndPosition != caret)
             {
                 return false;
             }
 
-            if (normalizedText.Length != _lastEditorText.Length + 1)
+            string insertedText = string.Empty;
+            EditorBox.Document.GetRange(caret - 1, caret).GetText(TextGetOptions.None, out insertedText);
+            if (string.IsNullOrEmpty(insertedText))
             {
                 return false;
             }
 
-            var insertedIndex = 0;
-            while (insertedIndex < _lastEditorText.Length
-                   && insertedIndex < normalizedText.Length
-                   && _lastEditorText[insertedIndex] == normalizedText[insertedIndex])
-            {
-                insertedIndex++;
-            }
-
-            if (insertedIndex >= normalizedText.Length)
-            {
-                return false;
-            }
-
-            var closing = GetAutoPairClosingText(normalizedText[insertedIndex], settings);
+            var closing = GetAutoPairClosingText(insertedText[0], settings);
             if (closing == null)
             {
                 return false;
             }
 
-            var selection = EditorBox.Document.Selection;
-            var caret = selection.StartPosition;
-            if (caret != insertedIndex + 1)
+            string nextText = string.Empty;
+            try
+            {
+                EditorBox.Document.GetRange(caret, caret + 1).GetText(TextGetOptions.None, out nextText);
+            }
+            catch
+            {
+                nextText = string.Empty;
+            }
+            if (!string.IsNullOrEmpty(nextText) && nextText[0] == closing[0])
             {
                 return false;
             }
@@ -972,10 +954,6 @@ namespace MetroMarkdownEditor.Windows
                 _isAutoPairEdit = true;
                 selection.TypeText(closing);
                 selection.SetRange(caret, caret);
-
-                string refreshed = string.Empty;
-                EditorBox.Document.GetText(TextGetOptions.None, out refreshed);
-                normalizedText = (refreshed ?? string.Empty).Replace('\r', '\n').TrimEnd('\0', '\n');
                 return true;
             }
             catch
@@ -1138,7 +1116,7 @@ namespace MetroMarkdownEditor.Windows
             if (_pendingColdPreviewRefresh && ViewModel != null)
             {
                 _pendingColdPreviewRefresh = false;
-                ViewModel.RefreshPreview();
+                FlushPendingEditorText(refreshPreview: true);
             }
         }
 
@@ -1285,8 +1263,35 @@ namespace MetroMarkdownEditor.Windows
             return (text ?? string.Empty).Replace('\r', '\n').TrimEnd('\0', '\n');
         }
 
+        private void FlushPendingEditorText(bool refreshPreview)
+        {
+            if (!_editorTextDirty || _dirtyEditorDocument == null || EditorBox == null || EditorBox.Document == null)
+            {
+                return;
+            }
+
+            var text = GetNormalizedEditorText();
+            if (ReferenceEquals(_dirtyEditorDocument, ViewModel?.ActiveDocument))
+            {
+                ViewModel.SetContentFromEditor(text);
+                if (refreshPreview)
+                {
+                    ViewModel.RefreshPreview();
+                }
+            }
+            else
+            {
+                _dirtyEditorDocument.Content = text;
+            }
+
+            _lastEditorText = text;
+            _editorTextDirty = false;
+            _dirtyEditorDocument = null;
+        }
+
         private void SaveSnapshot()
         {
+            FlushPendingEditorText(refreshPreview: false);
             var snapshot = GetNormalizedEditorText();
             if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
             {
@@ -1358,6 +1363,8 @@ namespace MetroMarkdownEditor.Windows
             _undoTimer.Stop();
             EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
             _lastEditorText = (text ?? string.Empty).Replace('\r', '\n');
+            _editorTextDirty = false;
+            _dirtyEditorDocument = null;
             
             // 每次 SetText 后必须重新应用格式，因为 RichEditBox 会回退到默认样式
             ApplyEditorFormatting();
@@ -1497,10 +1504,6 @@ namespace MetroMarkdownEditor.Windows
             if (EditorBox == null || EditorBox.Document == null) return;
 
             ITextDocument doc = EditorBox.Document;
-            string text = string.Empty;
-            doc.GetText(TextGetOptions.None, out text);
-
-            if (string.IsNullOrEmpty(text)) return;
 
             try
             {
@@ -1534,18 +1537,38 @@ namespace MetroMarkdownEditor.Windows
 
                 int start = doc.Selection.StartPosition;
                 int end = doc.Selection.EndPosition;
-                bool useFullDocument = forceFullDocument || text.Length <= 30000;
+                bool useFullDocument = forceFullDocument;
                 int highlightStart = 0;
-                int highlightLength = text.Length;
+                int highlightLength;
+                string workingText;
 
-                if (!useFullDocument)
+                if (useFullDocument)
                 {
-                    highlightStart = Math.Max(0, Math.Min(start, end) - 2048);
-                    var highlightEnd = Math.Min(text.Length, Math.Max(start, end) + 2048);
-                    highlightLength = Math.Max(0, highlightEnd - highlightStart);
+                    string text = string.Empty;
+                    doc.GetText(TextGetOptions.None, out text);
+                    if (string.IsNullOrEmpty(text)) return;
+                    workingText = text.Replace('\r', '\n');
+                    highlightLength = text.Length;
                 }
+                else
+                {
+                    highlightStart = Math.Max(0, Math.Min(start, end) - 4096);
+                    var highlightEnd = Math.Max(start, end) + 4096;
+                    string text = string.Empty;
+                    try
+                    {
+                        doc.GetRange(highlightStart, highlightEnd).GetText(TextGetOptions.None, out text);
+                    }
+                    catch
+                    {
+                        doc.GetText(TextGetOptions.None, out text);
+                        highlightStart = 0;
+                    }
 
-                var workingText = useFullDocument ? text : text.Substring(highlightStart, highlightLength);
+                    if (string.IsNullOrEmpty(text)) return;
+                    workingText = text.Replace('\r', '\n').TrimEnd('\0');
+                    highlightLength = workingText.Length;
+                }
 
                 ITextRange fullRange = doc.GetRange(highlightStart, highlightStart + highlightLength);
                 fullRange.CharacterFormat.ForegroundColor = bodyColor;
@@ -1640,6 +1663,7 @@ namespace MetroMarkdownEditor.Windows
             
             if (ViewModel != null)
             {
+                FlushPendingEditorText(refreshPreview: false);
                 await ViewModel.ExportAsync(format);
             }
         }

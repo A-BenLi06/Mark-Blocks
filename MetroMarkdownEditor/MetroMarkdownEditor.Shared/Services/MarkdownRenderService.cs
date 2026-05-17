@@ -627,6 +627,26 @@ namespace MetroMarkdownEditor.Services
             sb.Append("<script>" + _cachedKatexAutoRender + "</script>");
             sb.Append("<script>" + _cachedJs + "</script>");
 
+            // Stable native scroll entry point; avoids allocating eval scripts during scroll sync.
+            sb.Append(@"<script>
+                window.__mdScrollToRatio = function(ratioText) {
+                    var ratio = parseFloat(ratioText);
+                    if (isNaN(ratio)) ratio = 0;
+                    if (ratio < 0) ratio = 0;
+                    if (ratio > 1) ratio = 1;
+
+                    var doc = document.documentElement || document.body;
+                    var body = document.body;
+                    var scrollHeight = Math.max(
+                        (doc && doc.scrollHeight) || 0,
+                        (body && body.scrollHeight) || 0
+                    );
+                    var max = scrollHeight - (window.innerHeight || 0);
+                    if (max < 0) max = 0;
+                    window.scrollTo(0, max * ratio);
+                };
+            </script>");
+
             // === 4. Mermaid 初始化 (v7 专用配置) ===
             sb.Append(@"<script>
                 if (typeof mermaid !== 'undefined') {

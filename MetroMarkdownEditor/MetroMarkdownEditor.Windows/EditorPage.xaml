@@ -159,7 +159,7 @@
                     </AppBarButton.Icon>
                 </AppBarButton>
 
-                <AppBarButton Label="Save" Command="{Binding SaveCommand}">
+                <AppBarButton Label="Save" Click="SaveButton_Click">
                     <AppBarButton.Icon>
                         <SymbolIcon Symbol="Save"/>
                     </AppBarButton.Icon>
