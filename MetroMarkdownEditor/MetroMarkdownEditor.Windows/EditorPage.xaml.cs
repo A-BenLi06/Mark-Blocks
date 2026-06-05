@@ -482,7 +482,7 @@ namespace MetroMarkdownEditor.Windows
         /// <summary>
         /// 快捷键处理 (Ctrl+Z, Ctrl+Y, Tab)
         /// </summary>
-        private void EditorBox_KeyDown(object sender, global::Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        private async void EditorBox_KeyDown(object sender, global::Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
             var ctrlState = global::Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(global::Windows.System.VirtualKey.Control);
             bool isCtrlPressed = (ctrlState & global::Windows.UI.Core.CoreVirtualKeyStates.Down) == global::Windows.UI.Core.CoreVirtualKeyStates.Down;
@@ -508,6 +508,17 @@ namespace MetroMarkdownEditor.Windows
                 e.Handled = true;
                 Redo();
                 return;
+            }
+
+            if (isCtrlPressed && e.Key == global::Windows.System.VirtualKey.V)
+            {
+                var data = GetClipboardContentSafe();
+                if (data != null && data.Contains(StandardDataFormats.StorageItems))
+                {
+                    e.Handled = true;
+                    await TryPasteImagePathsFromClipboardAsync(data);
+                    return;
+                }
             }
 
             if (isCtrlPressed && e.Key == global::Windows.System.VirtualKey.C)
@@ -703,6 +714,107 @@ namespace MetroMarkdownEditor.Windows
             return true;
         }
 
+        private static DataPackageView GetClipboardContentSafe()
+        {
+            try
+            {
+                return Clipboard.GetContent();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<bool> TryPasteImagePathsFromClipboardAsync(DataPackageView data)
+        {
+            if (data == null || EditorBox == null || EditorBox.Document == null)
+            {
+                return false;
+            }
+
+            IReadOnlyList<IStorageItem> items;
+            try
+            {
+                items = await data.GetStorageItemsAsync();
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (items == null || items.Count == 0)
+            {
+                return false;
+            }
+
+            var markdownImages = items
+                .OfType<StorageFile>()
+                .Where(IsSupportedImageFile)
+                .Select(file => file.Path)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(BuildMarkdownImageReference)
+                .ToList();
+
+            if (markdownImages.Count == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                EditorBox.Document.Selection.TypeText(string.Join("\r", markdownImages));
+            }
+            catch
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsSupportedImageFile(StorageFile file)
+        {
+            if (file == null || string.IsNullOrWhiteSpace(file.Path))
+            {
+                return false;
+            }
+
+            var fileType = (file.FileType ?? string.Empty).ToLowerInvariant();
+            switch (fileType)
+            {
+                case ".bmp":
+                case ".gif":
+                case ".ico":
+                case ".jpeg":
+                case ".jpg":
+                case ".png":
+                case ".svg":
+                case ".tif":
+                case ".tiff":
+                case ".webp":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static string BuildMarkdownImageReference(string path)
+        {
+            var normalizedPath = (path ?? string.Empty).Replace('\\', '/');
+            if (RequiresAngleBracketLinkDestination(normalizedPath))
+            {
+                normalizedPath = "<" + normalizedPath.Replace("<", "%3C").Replace(">", "%3E") + ">";
+            }
+
+            return "![](" + normalizedPath + ")";
+        }
+
+        private static bool RequiresAngleBracketLinkDestination(string path)
+        {
+            return !string.IsNullOrEmpty(path)
+                && path.IndexOfAny(new[] { ' ', '\t', '(', ')' }) >= 0;
+        }
         /// <summary>
         /// 负责调用 RenderService 生成预览 HTML 并注入 WebView
         /// </summary>
