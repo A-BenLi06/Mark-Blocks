@@ -12,6 +12,9 @@ using Markdig.Extensions.AutoIdentifiers;
 using Markdig.Extensions.EmphasisExtras;
 using Markdig.Extensions.SmartyPants;
 using Markdig.Extensions.Tables;
+using Markdig.Renderers.Html;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
 
 namespace MetroMarkdownEditor.Services
 {
@@ -19,6 +22,20 @@ namespace MetroMarkdownEditor.Services
     {
         public string Html { get; set; }
         public IReadOnlyList<MarkdownBlock> Blocks { get; set; }
+        public IReadOnlyList<MarkdownOutlineItem> Outline { get; set; }
+    }
+
+    public class MarkdownOutlineItem
+    {
+        public string Title { get; set; }
+        public int Level { get; set; }
+        public int Line { get; set; }
+        public string AnchorId { get; set; }
+        public int BlockIndex { get; set; }
+        public Thickness Indent
+        {
+            get { return new Thickness(Math.Max(0, Level - 1) * 16, 0, 0, 0); }
+        }
     }
 
     public class MarkdownBlock
@@ -707,7 +724,8 @@ namespace MetroMarkdownEditor.Services
             var normalized = NormalizeNewLines(markdown ?? string.Empty);
             var blocks = SplitIntoBlocks(normalized);
             var html = BuildHtmlFromBlocks(blocks);
-            return new MarkdownRenderResult { Html = html, Blocks = blocks };
+            var outline = ExtractOutline(normalized, blocks);
+            return new MarkdownRenderResult { Html = html, Blocks = blocks, Outline = outline };
         }
 
         // UpdateContentAsync：针对 Mermaid v7 简化渲染逻辑
@@ -1083,6 +1101,230 @@ namespace MetroMarkdownEditor.Services
 
         public string ToHtml(string markdown) => Markdig.Markdown.ToHtml(markdown ?? string.Empty, GetPipeline());
 
+        private IReadOnlyList<MarkdownOutlineItem> ExtractOutline(string markdown, IReadOnlyList<MarkdownBlock> blocks)
+        {
+            var outline = new List<MarkdownOutlineItem>();
+            try
+            {
+                var document = Markdown.Parse(markdown ?? string.Empty, GetPipeline());
+                var slugCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var heading in document.Descendants<HeadingBlock>())
+                {
+                    var title = ExtractInlineText(heading.Inline).Trim();
+                    if (string.IsNullOrWhiteSpace(title))
+                    {
+                        continue;
+                    }
+
+                    var anchor = GetHeadingAnchor(heading, title, slugCounts);
+                    outline.Add(new MarkdownOutlineItem
+                    {
+                        Title = title,
+                        Level = heading.Level,
+                        Line = Math.Max(0, heading.Line),
+                        AnchorId = anchor,
+                        BlockIndex = FindBlockIndexForLine(blocks, Math.Max(0, heading.Line))
+                    });
+                }
+            }
+            catch
+            {
+                outline.Clear();
+            }
+
+            if (outline.Count == 0)
+            {
+                outline.AddRange(ExtractOutlineFallback(markdown, blocks));
+            }
+
+            return outline;
+        }
+
+        private static string ExtractInlineText(ContainerInline container)
+        {
+            if (container == null)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder();
+            foreach (var inline in container)
+            {
+                AppendInlineText(sb, inline);
+            }
+            return sb.ToString();
+        }
+
+        private static void AppendInlineText(StringBuilder sb, Inline inline)
+        {
+            if (inline == null)
+            {
+                return;
+            }
+
+            var literal = inline as LiteralInline;
+            if (literal != null)
+            {
+                sb.Append(literal.Content.ToString());
+                return;
+            }
+
+            var code = inline as CodeInline;
+            if (code != null)
+            {
+                sb.Append(code.Content);
+                return;
+            }
+
+            var lineBreak = inline as LineBreakInline;
+            if (lineBreak != null)
+            {
+                sb.Append(" ");
+                return;
+            }
+
+            var container = inline as ContainerInline;
+            if (container != null)
+            {
+                foreach (var child in container)
+                {
+                    AppendInlineText(sb, child);
+                }
+            }
+        }
+
+        private static string GetHeadingAnchor(HeadingBlock heading, string title, IDictionary<string, int> slugCounts)
+        {
+            try
+            {
+                var attributes = heading.GetAttributes();
+                if (attributes != null && !string.IsNullOrWhiteSpace(attributes.Id))
+                {
+                    return attributes.Id;
+                }
+            }
+            catch
+            {
+            }
+
+            return BuildGithubLikeSlug(title, slugCounts);
+        }
+
+        private static string BuildGithubLikeSlug(string title, IDictionary<string, int> slugCounts)
+        {
+            var sb = new StringBuilder();
+            bool previousDash = false;
+            var lower = (title ?? string.Empty).Trim().ToLowerInvariant();
+
+            foreach (var c in lower)
+            {
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                {
+                    sb.Append(c);
+                    previousDash = c == '-';
+                }
+                else if (char.IsWhiteSpace(c))
+                {
+                    if (!previousDash && sb.Length > 0)
+                    {
+                        sb.Append('-');
+                        previousDash = true;
+                    }
+                }
+            }
+
+            var slug = sb.ToString().Trim('-');
+            if (string.IsNullOrEmpty(slug))
+            {
+                slug = "section";
+            }
+
+            int count;
+            if (!slugCounts.TryGetValue(slug, out count))
+            {
+                slugCounts[slug] = 1;
+                return slug;
+            }
+
+            slugCounts[slug] = count + 1;
+            return slug + "-" + count.ToString();
+        }
+
+        private static int FindBlockIndexForLine(IReadOnlyList<MarkdownBlock> blocks, int line)
+        {
+            if (blocks == null)
+            {
+                return -1;
+            }
+
+            foreach (var block in blocks)
+            {
+                if (block.StartLine <= line && line <= block.EndLine)
+                {
+                    return block.Index;
+                }
+            }
+
+            return -1;
+        }
+
+        private static IEnumerable<MarkdownOutlineItem> ExtractOutlineFallback(string markdown, IReadOnlyList<MarkdownBlock> blocks)
+        {
+            var result = new List<MarkdownOutlineItem>();
+            var lines = NormalizeNewLines(markdown).Split('\n');
+            var slugCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            bool inFence = false;
+            string fenceMarker = null;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i] ?? string.Empty;
+                var trimmed = line.TrimStart();
+                if (trimmed.StartsWith("```") || trimmed.StartsWith("~~~"))
+                {
+                    if (!inFence)
+                    {
+                        inFence = true;
+                        fenceMarker = trimmed.Substring(0, 3);
+                    }
+                    else if (!string.IsNullOrEmpty(fenceMarker) && trimmed.StartsWith(fenceMarker))
+                    {
+                        inFence = false;
+                        fenceMarker = null;
+                    }
+                    continue;
+                }
+
+                if (inFence)
+                {
+                    continue;
+                }
+
+                var match = Regex.Match(line, @"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$");
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                var title = Regex.Replace(match.Groups[2].Value, @"[`*_~\[\]\(\)!]", string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    continue;
+                }
+
+                result.Add(new MarkdownOutlineItem
+                {
+                    Title = title,
+                    Level = match.Groups[1].Value.Length,
+                    Line = i,
+                    AnchorId = BuildGithubLikeSlug(title, slugCounts),
+                    BlockIndex = FindBlockIndexForLine(blocks, i)
+                });
+            }
+
+            return result;
+        }
+
         private void AppendFragmentEnhancements(StringBuilder script, string scopeVariable)
         {
             script.Append("  var images = ").Append(scopeVariable).Append(".getElementsByTagName('img');");
@@ -1381,7 +1623,7 @@ namespace MetroMarkdownEditor.Services
 
         private static string ApplyDefaultCodeLanguage(string html, MarkdownSettingsService settings)
         {
-            if (settings.ApplyDefaultCodeLanguageWhen == DefaultCodeLanguageApplyMode.Never)
+            if (settings.ApplyDefaultCodeLanguageWhen == DefaultCodeLanguageApplyMode.WhenAddCodeFencesViaMenubar)
             {
                 return html;
             }

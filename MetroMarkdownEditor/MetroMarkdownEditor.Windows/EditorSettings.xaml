@@ -13,10 +13,23 @@
                        FontWeight="SemiBold"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Margin="0,0,0,8" />
-            <Slider Minimum="2" Maximum="8" SmallChange="1" LargeChange="2"
-                    Value="{Binding IndentSizeOnSave, Mode=TwoWay}" />
+            <TextBlock Text="Only apply to quotes and lists created from menu bar or hybrid view."
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Opacity="0.6"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8" />
+            <ComboBox SelectedIndex="{Binding IndentSizeOnSaveIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Auto" />
+                <ComboBoxItem Content="2" />
+                <ComboBoxItem Content="3" />
+                <ComboBoxItem Content="4" />
+                <ComboBoxItem Content="5" />
+                <ComboBoxItem Content="Tab" />
+            </ComboBox>
             <CheckBox Content="Pretty indentation"
-                      IsChecked="{Binding PrettyIndentation, Mode=TwoWay}" />
+                      IsChecked="{Binding PrettyIndentation, Mode=TwoWay}"
+                      Margin="0,8,0,0" />
 
             <TextBlock Text="Auto Pair"
                        FontSize="18"
@@ -74,7 +87,39 @@
             <ComboBox SelectedIndex="{Binding SpellCheckModeIndex, Mode=TwoWay}"
                       HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="Auto Detect Language" />
-                <ComboBoxItem Content="Disabled" />
+                <ComboBoxItem Content="Disable Spell Check" />
+                <ComboBoxItem Content="English (US)" />
+                <ComboBoxItem Content="English (UK)" />
+                <ComboBoxItem Content="Čeština" />
+                <ComboBoxItem Content="Dansk" />
+                <ComboBoxItem Content="Deutsch" />
+                <ComboBoxItem Content="Español" />
+                <ComboBoxItem Content="Ελληνικά" />
+                <ComboBoxItem Content="Français" />
+                <ComboBoxItem Content="Galego" />
+                <ComboBoxItem Content="Hrvatski" />
+                <ComboBoxItem Content="Italiano" />
+                <ComboBoxItem Content="Limba Română" />
+                <ComboBoxItem Content="Nederlands" />
+                <ComboBoxItem Content="Magyar" />
+                <ComboBoxItem Content="Orang Melayu" />
+                <ComboBoxItem Content="Polski" />
+                <ComboBoxItem Content="Português (Brasil)" />
+                <ComboBoxItem Content="Português (Portugal)" />
+                <ComboBoxItem Content="Русский" />
+                <ComboBoxItem Content="Schweizerdeutsch" />
+                <ComboBoxItem Content="Slovenčina" />
+                <ComboBoxItem Content="Slovenščina" />
+                <ComboBoxItem Content="Svenska" />
+                <ComboBoxItem Content="Tiếng Việt" />
+                <ComboBoxItem Content="Türkçe" />
+                <ComboBoxItem Content="Українська мова" />
+                <ComboBoxItem Content="فارسی" />
+                <ComboBoxItem Content="العربية" />
+                <ComboBoxItem Content="한국어" />
+                <ComboBoxItem Content="中文" />
+                <ComboBoxItem Content="日本語" />
+                <ComboBoxItem Content="עברית" />
             </ComboBox>
 
             <TextBlock Text="Typewriter Mode"

@@ -7,14 +7,16 @@ namespace MetroMarkdownEditor.Services
     public enum MarkdownHeadingStyle
     {
         Atx = 0,
-        Setext = 1
+        Setext = 1,
+        AtxClosed = 2,
+        VariableWidthSetext = 3
     }
 
     public enum MarkdownUnorderedListStyle
     {
         Dash = 0,
-        Asterisk = 1,
-        Plus = 2
+        Plus = 1,
+        Asterisk = 2
     }
 
     public enum MarkdownOrderedListStyle
@@ -33,14 +35,15 @@ namespace MetroMarkdownEditor.Services
     public enum DefaultCodeLanguageApplyMode
     {
         WhenAddCodeFencesViaMarkdown = 0,
-        Always = 1,
-        Never = 2
+        WhenAddCodeFencesViaMenubar = 1,
+        Both = 2
     }
 
     public enum MathEquationNumberingMode
     {
         None = 0,
-        All = 1
+        Ams = 1,
+        All = 2
     }
 
     public enum MathHtmlExportMode
@@ -52,8 +55,7 @@ namespace MetroMarkdownEditor.Services
     public enum MarkdownWhitespaceMode
     {
         PreserveSequentialWhitespaceAndSingleLineBreak = 0,
-        PreserveSequentialWhitespace = 1,
-        CollapseWhitespace = 2
+        IgnoreSequentialWhitespaceAndSingleLineBreak = 1
     }
 
     public sealed class MarkdownSettingsService : INotifyPropertyChanged
@@ -121,7 +123,7 @@ namespace MetroMarkdownEditor.Services
         public int HeadingStyleIndex
         {
             get { return (int)_headingStyle; }
-            set { HeadingStyle = (MarkdownHeadingStyle)NormalizeIndex(value, 0, 1); }
+            set { HeadingStyle = (MarkdownHeadingStyle)NormalizeIndex(value, 0, 3); }
         }
 
         public MarkdownUnorderedListStyle UnorderedListStyle
@@ -241,7 +243,13 @@ namespace MetroMarkdownEditor.Services
         public int CodeIndentSize
         {
             get { return _codeIndentSize; }
-            set { SetValue(ref _codeIndentSize, Math.Max(1, Math.Min(8, value)), "CodeIndentSize"); }
+            set { SetValue(ref _codeIndentSize, Math.Max(2, Math.Min(5, value)), "CodeIndentSize"); }
+        }
+
+        public int CodeIndentSizeIndex
+        {
+            get { return Math.Max(0, Math.Min(3, _codeIndentSize - 2)); }
+            set { CodeIndentSize = NormalizeIndex(value, 0, 3) + 2; }
         }
 
         public string DefaultCodeLanguage
@@ -289,7 +297,7 @@ namespace MetroMarkdownEditor.Services
         public int AutoNumberingMathEquationsIndex
         {
             get { return (int)_autoNumberingMathEquations; }
-            set { AutoNumberingMathEquations = (MathEquationNumberingMode)NormalizeIndex(value, 0, 1); }
+            set { AutoNumberingMathEquations = (MathEquationNumberingMode)NormalizeIndex(value, 0, 2); }
         }
 
         public MathHtmlExportMode MathHtmlExportMode
@@ -325,7 +333,7 @@ namespace MetroMarkdownEditor.Services
         public int WritingWhitespaceModeIndex
         {
             get { return (int)_writingWhitespaceMode; }
-            set { WritingWhitespaceMode = (MarkdownWhitespaceMode)NormalizeIndex(value, 0, 2); }
+            set { WritingWhitespaceMode = (MarkdownWhitespaceMode)NormalizeIndex(value, 0, 1); }
         }
 
         public MarkdownWhitespaceMode ExportPrintWhitespaceMode
@@ -337,7 +345,7 @@ namespace MetroMarkdownEditor.Services
         public int ExportPrintWhitespaceModeIndex
         {
             get { return (int)_exportPrintWhitespaceMode; }
-            set { ExportPrintWhitespaceMode = (MarkdownWhitespaceMode)NormalizeIndex(value, 0, 2); }
+            set { ExportPrintWhitespaceMode = (MarkdownWhitespaceMode)NormalizeIndex(value, 0, 1); }
         }
 
         public bool ShouldUseSoftlineBreakAsHardlineBreak
@@ -393,7 +401,7 @@ namespace MetroMarkdownEditor.Services
         private void Load()
         {
             _strictMode = ReadBool("StrictMode", _strictMode);
-            _headingStyle = (MarkdownHeadingStyle)ReadInt("HeadingStyle", (int)_headingStyle, 0, 1);
+            _headingStyle = (MarkdownHeadingStyle)ReadInt("HeadingStyle", (int)_headingStyle, 0, 3);
             _unorderedListStyle = (MarkdownUnorderedListStyle)ReadInt("UnorderedListStyle", (int)_unorderedListStyle, 0, 2);
             _orderedListStyle = (MarkdownOrderedListStyle)ReadInt("OrderedListStyle", (int)_orderedListStyle, 0, 1);
             _autoLinks = ReadBool("AutoLinks", _autoLinks);
@@ -410,18 +418,18 @@ namespace MetroMarkdownEditor.Services
             _displayLineNumbersForCodeFences = ReadBool("DisplayLineNumbersForCodeFences", _displayLineNumbersForCodeFences);
             _autoWrapLongLines = ReadBool("AutoWrapLongLines", _autoWrapLongLines);
             _useShiftTabToAutoIndentSelectedCode = ReadBool("UseShiftTabToAutoIndentSelectedCode", _useShiftTabToAutoIndentSelectedCode);
-            _codeIndentSize = ReadInt("CodeIndentSize", _codeIndentSize, 1, 8);
+            _codeIndentSize = ReadInt("CodeIndentSize", _codeIndentSize, 2, 5);
             _defaultCodeLanguage = ReadString("DefaultCodeLanguage", _defaultCodeLanguage);
             _applyDefaultCodeLanguageWhen = (DefaultCodeLanguageApplyMode)ReadInt("ApplyDefaultCodeLanguageWhen", (int)_applyDefaultCodeLanguageWhen, 0, 2);
             _latexMathDelimiters = ReadBool("LatexMathDelimiters", _latexMathDelimiters);
             _codeBlockMath = ReadBool("CodeBlockMath", _codeBlockMath);
             _physicsPackageEnabled = ReadBool("PhysicsPackageEnabled", _physicsPackageEnabled);
-            _autoNumberingMathEquations = (MathEquationNumberingMode)ReadInt("AutoNumberingMathEquations", (int)_autoNumberingMathEquations, 0, 1);
+            _autoNumberingMathEquations = (MathEquationNumberingMode)ReadInt("AutoNumberingMathEquations", (int)_autoNumberingMathEquations, 0, 2);
             _mathHtmlExportMode = (MathHtmlExportMode)ReadInt("MathHtmlExportMode", (int)_mathHtmlExportMode, 0, 1);
             _indentFirstLineOfParagraphs = ReadBool("IndentFirstLineOfParagraphs", _indentFirstLineOfParagraphs);
             _visibleLineBreaks = ReadBool("VisibleLineBreaks", _visibleLineBreaks);
-            _writingWhitespaceMode = (MarkdownWhitespaceMode)ReadInt("WritingWhitespaceMode", (int)_writingWhitespaceMode, 0, 2);
-            _exportPrintWhitespaceMode = (MarkdownWhitespaceMode)ReadInt("ExportPrintWhitespaceMode", (int)_exportPrintWhitespaceMode, 0, 2);
+            _writingWhitespaceMode = (MarkdownWhitespaceMode)ReadInt("WritingWhitespaceMode", (int)_writingWhitespaceMode, 0, 1);
+            _exportPrintWhitespaceMode = (MarkdownWhitespaceMode)ReadInt("ExportPrintWhitespaceMode", (int)_exportPrintWhitespaceMode, 0, 1);
         }
 
         private void Save()
@@ -501,6 +509,7 @@ namespace MetroMarkdownEditor.Services
             else if (propertyName == "OrderedListStyle") OnPropertyChanged("OrderedListStyleIndex");
             else if (propertyName == "SmartPunctuationMode") OnPropertyChanged("SmartPunctuationModeIndex");
             else if (propertyName == "ApplyDefaultCodeLanguageWhen") OnPropertyChanged("ApplyDefaultCodeLanguageWhenIndex");
+            else if (propertyName == "CodeIndentSize") OnPropertyChanged("CodeIndentSizeIndex");
             else if (propertyName == "AutoNumberingMathEquations") OnPropertyChanged("AutoNumberingMathEquationsIndex");
             else if (propertyName == "MathHtmlExportMode") OnPropertyChanged("MathHtmlExportModeIndex");
             else if (propertyName == "WritingWhitespaceMode") OnPropertyChanged("WritingWhitespaceModeIndex");

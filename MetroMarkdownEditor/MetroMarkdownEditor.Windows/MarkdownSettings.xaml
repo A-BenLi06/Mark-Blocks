@@ -15,6 +15,11 @@
                        Margin="0,0,0,8" />
             <ToggleSwitch Header="Strict Mode"
                           IsOn="{Binding StrictMode, Mode=TwoWay}" />
+            <TextBlock Text="Only apply to quotes and lists created from menu bar or hybrid view."
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Opacity="0.6"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8" />
             <TextBlock Text="Heading Style"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Margin="0,12,0,4" />
@@ -22,6 +27,8 @@
                       HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="atx (#)" />
                 <ComboBoxItem Content="setext (===)" />
+                <ComboBoxItem Content="atx with suffix (# ... #)" />
+                <ComboBoxItem Content="variable-width setext (=====)" />
             </ComboBox>
             <TextBlock Text="Unordered List"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
@@ -29,8 +36,8 @@
             <ComboBox SelectedIndex="{Binding UnorderedListStyleIndex, Mode=TwoWay}"
                       HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="- item" />
-                <ComboBoxItem Content="* item" />
                 <ComboBoxItem Content="+ item" />
+                <ComboBoxItem Content="* item" />
             </ComboBox>
             <TextBlock Text="Ordered List"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
@@ -94,20 +101,26 @@
             <TextBlock Text="Indent Size for Code"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Margin="0,12,0,4" />
-            <Slider Minimum="1" Maximum="8" SmallChange="1" LargeChange="2"
-                    Value="{Binding CodeIndentSize, Mode=TwoWay}" />
+            <ComboBox SelectedIndex="{Binding CodeIndentSizeIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="2" />
+                <ComboBoxItem Content="3" />
+                <ComboBoxItem Content="4" />
+                <ComboBoxItem Content="5" />
+            </ComboBox>
             <TextBlock Text="Default Code Language"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Margin="0,12,0,4" />
-            <TextBox Text="{Binding DefaultCodeLanguage, Mode=TwoWay}" />
+            <TextBox Text="{Binding DefaultCodeLanguage, Mode=TwoWay}"
+                     PlaceholderText="(None), Last Used, ABAP, apl, asciiarmor, ASN.1..." />
             <TextBlock Text="Apply Default Code Language When"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Margin="0,12,0,4" />
             <ComboBox SelectedIndex="{Binding ApplyDefaultCodeLanguageWhenIndex, Mode=TwoWay}"
                       HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="When add code fences via Markdown" />
-                <ComboBoxItem Content="Always" />
-                <ComboBoxItem Content="Never" />
+                <ComboBoxItem Content="When add code fences via Menubar" />
+                <ComboBoxItem Content="Both" />
             </ComboBox>
 
             <TextBlock Text="Math"
@@ -129,7 +142,8 @@
             <ComboBox SelectedIndex="{Binding AutoNumberingMathEquationsIndex, Mode=TwoWay}"
                       HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="No Automatic Equation Numbering" />
-                <ComboBoxItem Content="Number all equations" />
+                <ComboBoxItem Content="Use AMS Numbering Rules" />
+                <ComboBoxItem Content="Auto Numbering for All Math Equations" />
             </ComboBox>
             <TextBlock Text="When copy / export as HTML"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
@@ -155,8 +169,7 @@
             <ComboBox SelectedIndex="{Binding WritingWhitespaceModeIndex, Mode=TwoWay}"
                       HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="Preserve sequential whitespace and single line break" />
-                <ComboBoxItem Content="Preserve sequential whitespace" />
-                <ComboBoxItem Content="Collapse whitespace" />
+                <ComboBoxItem Content="Ignore sequential whitespace and single line break" />
             </ComboBox>
             <TextBlock Text="Export / Print"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
@@ -164,8 +177,7 @@
             <ComboBox SelectedIndex="{Binding ExportPrintWhitespaceModeIndex, Mode=TwoWay}"
                       HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="Preserve sequential whitespace and single line break" />
-                <ComboBoxItem Content="Preserve sequential whitespace" />
-                <ComboBoxItem Content="Collapse whitespace" />
+                <ComboBoxItem Content="Ignore sequential whitespace and single line break" />
             </ComboBox>
         </StackPanel>
     </ScrollViewer>

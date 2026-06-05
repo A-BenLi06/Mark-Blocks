@@ -120,6 +120,12 @@
     <Compile Include="EditorSettings.xaml.cs">
       <DependentUpon>EditorSettings.xaml</DependentUpon>
     </Compile>
+    <Compile Include="ImageSettings.xaml.cs">
+      <DependentUpon>ImageSettings.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="ExportSettings.xaml.cs">
+      <DependentUpon>ExportSettings.xaml</DependentUpon>
+    </Compile>
     <Compile Include="EditorPage.xaml.cs">
       <DependentUpon>EditorPage.xaml</DependentUpon>
     </Compile>
@@ -164,6 +170,14 @@
       <SubType>Designer</SubType>
     </Page>
     <Page Include="EditorSettings.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ImageSettings.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ExportSettings.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>

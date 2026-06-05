@@ -3,10 +3,13 @@ using System.Text;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Globalization;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Data.Json;
 using Windows.Storage;
 using MetroMarkdownEditor.Services;
 using MetroMarkdownEditor.ViewModels;
@@ -14,6 +17,7 @@ using global::Windows.UI;
 using global::Windows.UI.Text;
 using global::Windows.UI.Xaml;
 using global::Windows.UI.Xaml.Controls;
+using global::Windows.UI.Xaml.Markup;
 using global::Windows.UI.Xaml.Media;
 using global::Windows.UI.Xaml.Navigation;
 using global::Windows.UI.Xaml.Input;
@@ -37,6 +41,7 @@ namespace MetroMarkdownEditor.Windows
         
         // 渲染服务：负责生成 HTML 和 CSS
         private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
+        private readonly HttpClient _imageUploadHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
         
         // 撤销/重做 专用栈和计时器（用于合并短时间内的连续输入）
         private readonly DispatcherTimer _undoTimer;
@@ -79,6 +84,7 @@ namespace MetroMarkdownEditor.Windows
         private string _lastSearchText = string.Empty;
         private int _lastHighlightStart = -1;
         private int _lastHighlightLength = 0;
+        private global::Windows.UI.Xaml.Controls.Primitives.Popup _outlinePopup;
 
         // 便捷访问 ViewModel
         private EditorViewModel ViewModel
@@ -748,18 +754,21 @@ namespace MetroMarkdownEditor.Windows
                 return false;
             }
 
-            var markdownImages = items
+            var imagePaths = items
                 .OfType<StorageFile>()
                 .Where(IsSupportedImageFile)
                 .Select(file => file.Path)
                 .Where(path => !string.IsNullOrWhiteSpace(path))
-                .Select(BuildMarkdownImageReference)
                 .ToList();
 
-            if (markdownImages.Count == 0)
+            if (imagePaths.Count == 0)
             {
                 return false;
             }
+
+            var imageSettings = ImageSettingsService.Instance;
+            var imageReferences = await TryUploadImagePathsWithPicGoAsync(imagePaths) ?? imagePaths;
+            var markdownImages = imageReferences.Select(path => BuildMarkdownImageReference(path, imageSettings)).ToList();
 
             try
             {
@@ -771,6 +780,133 @@ namespace MetroMarkdownEditor.Windows
             }
 
             return true;
+        }
+
+        private async Task<IReadOnlyList<string>> TryUploadImagePathsWithPicGoAsync(IReadOnlyList<string> imagePaths)
+        {
+            var settings = ImageSettingsService.Instance;
+            if (!settings.ShouldUploadLocalImages || imagePaths == null || imagePaths.Count == 0)
+            {
+                return null;
+            }
+
+            if (settings.Uploader != ImageUploader.PicGoCore && settings.Uploader != ImageUploader.PicList)
+            {
+                return null;
+            }
+
+            var uploadUri = BuildPicGoUploadUri(settings.PicGoServerUrl, settings.PicGoServerSecret);
+            if (uploadUri == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                var payload = "{\"list\":[" + string.Join(",", imagePaths.Select(QuoteJsonString)) + "]}";
+                using (var request = new HttpRequestMessage(HttpMethod.Post, uploadUri))
+                {
+                    AddPicGoAuthHeaders(request, settings.PicGoServerSecret);
+                    request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+                    var response = await _imageUploadHttpClient.SendAsync(request);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return null;
+                    }
+
+                    var responseText = await response.Content.ReadAsStringAsync();
+                    var urls = ParsePicGoUploadResult(responseText);
+                    return urls != null && urls.Count == imagePaths.Count ? urls : null;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Uri BuildPicGoUploadUri(string serverUrl, string secret)
+        {
+            var value = string.IsNullOrWhiteSpace(serverUrl) ? "http://127.0.0.1:36677" : serverUrl.Trim();
+            if (!value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                && !value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                value = "http://" + value;
+            }
+
+            var queryStart = value.IndexOf('?');
+            var baseUrl = queryStart >= 0 ? value.Substring(0, queryStart) : value;
+            var query = queryStart >= 0 ? value.Substring(queryStart + 1) : string.Empty;
+            if (!baseUrl.TrimEnd('/').EndsWith("/upload", StringComparison.OrdinalIgnoreCase))
+            {
+                baseUrl = baseUrl.TrimEnd('/') + "/upload";
+            }
+
+            var trimmedSecret = (secret ?? string.Empty).Trim();
+            if (!string.IsNullOrEmpty(trimmedSecret))
+            {
+                var encodedSecret = Uri.EscapeDataString(trimmedSecret);
+                var authQuery = "key=" + encodedSecret + "&secret=" + encodedSecret;
+                query = string.IsNullOrEmpty(query) ? authQuery : query + "&" + authQuery;
+            }
+
+            Uri uploadUri;
+            return Uri.TryCreate(string.IsNullOrEmpty(query) ? baseUrl : baseUrl + "?" + query, UriKind.Absolute, out uploadUri)
+                ? uploadUri
+                : null;
+        }
+
+        private static void AddPicGoAuthHeaders(HttpRequestMessage request, string secret)
+        {
+            var trimmedSecret = (secret ?? string.Empty).Trim();
+            if (request == null || string.IsNullOrEmpty(trimmedSecret))
+            {
+                return;
+            }
+
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", trimmedSecret);
+            request.Headers.TryAddWithoutValidation("X-PicGo-Secret", trimmedSecret);
+        }
+
+        private static IReadOnlyList<string> ParsePicGoUploadResult(string responseText)
+        {
+            JsonObject json;
+            if (!JsonObject.TryParse(responseText ?? string.Empty, out json))
+            {
+                return null;
+            }
+
+            IJsonValue successValue;
+            if (json.TryGetValue("success", out successValue)
+                && successValue.ValueType == JsonValueType.Boolean
+                && !successValue.GetBoolean())
+            {
+                return null;
+            }
+
+            IJsonValue resultValue;
+            if (!json.TryGetValue("result", out resultValue) || resultValue.ValueType != JsonValueType.Array)
+            {
+                return null;
+            }
+
+            var urls = new List<string>();
+            foreach (var item in resultValue.GetArray())
+            {
+                if (item.ValueType != JsonValueType.String)
+                {
+                    continue;
+                }
+
+                var url = item.GetString();
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    urls.Add(url);
+                }
+            }
+
+            return urls;
         }
 
         private static bool IsSupportedImageFile(StorageFile file)
@@ -799,15 +935,80 @@ namespace MetroMarkdownEditor.Windows
             }
         }
 
-        private static string BuildMarkdownImageReference(string path)
+        private static string BuildMarkdownImageReference(string path, ImageSettingsService settings)
         {
             var normalizedPath = (path ?? string.Empty).Replace('\\', '/');
+            if (settings != null && settings.AddDotSlashForRelativePath && IsRelativeImagePath(normalizedPath) && !normalizedPath.StartsWith("./", StringComparison.Ordinal))
+            {
+                normalizedPath = "./" + normalizedPath;
+            }
+
+            if (settings != null && settings.AutoEscapeImageUrlWhenInsert)
+            {
+                normalizedPath = normalizedPath.Replace(" ", "%20");
+            }
+
             if (RequiresAngleBracketLinkDestination(normalizedPath))
             {
                 normalizedPath = "<" + normalizedPath.Replace("<", "%3C").Replace(">", "%3E") + ">";
             }
 
             return "![](" + normalizedPath + ")";
+        }
+
+        private static bool IsRelativeImagePath(string path)
+        {
+            return !string.IsNullOrWhiteSpace(path)
+                && !path.Contains("://")
+                && !path.StartsWith("/", StringComparison.Ordinal)
+                && !(path.Length > 1 && path[1] == ':');
+        }
+
+        private static string QuoteJsonString(string value)
+        {
+            var builder = new StringBuilder();
+            builder.Append('"');
+            foreach (var ch in value ?? string.Empty)
+            {
+                switch (ch)
+                {
+                    case '\\':
+                        builder.Append("\\\\");
+                        break;
+                    case '"':
+                        builder.Append("\\\"");
+                        break;
+                    case '\b':
+                        builder.Append("\\b");
+                        break;
+                    case '\f':
+                        builder.Append("\\f");
+                        break;
+                    case '\n':
+                        builder.Append("\\n");
+                        break;
+                    case '\r':
+                        builder.Append("\\r");
+                        break;
+                    case '\t':
+                        builder.Append("\\t");
+                        break;
+                    default:
+                        if (char.IsControl(ch))
+                        {
+                            builder.Append("\\u");
+                            builder.Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
+                        }
+                        else
+                        {
+                            builder.Append(ch);
+                        }
+                        break;
+                }
+            }
+
+            builder.Append('"');
+            return builder.ToString();
         }
 
         private static bool RequiresAngleBracketLinkDestination(string path)
@@ -1854,6 +2055,235 @@ namespace MetroMarkdownEditor.Windows
             public bool IsHot;          // 是否可以热更新（局部刷新）
             public bool RequiresCold;   // 是否需要冷更新（全量刷新）
             public int LineIndex;       // 发生变化的行号
+        }
+
+        // ==========================================
+        // Outline
+        // ==========================================
+
+        private void OutlineButton_Click(object sender, RoutedEventArgs e)
+        {
+            ShowOutlinePopup();
+        }
+
+        private void ShowOutlinePopup()
+        {
+            FlushPendingEditorText(refreshPreview: true);
+
+            if (_outlinePopup != null && _outlinePopup.IsOpen)
+            {
+                _outlinePopup.IsOpen = false;
+                return;
+            }
+
+            var items = ViewModel != null ? ViewModel.OutlineItems : null;
+            var panel = new Grid
+            {
+                Width = 420,
+                MaxHeight = Math.Max(260, Window.Current.Bounds.Height * 0.72),
+                Background = (SolidColorBrush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"]
+            };
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var titlePanel = new Grid { Margin = new Thickness(20, 16, 12, 8) };
+            titlePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            titlePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var title = new TextBlock
+            {
+                Text = "Outline",
+                FontSize = 22,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(title, 0);
+
+            var close = new Button
+            {
+                Content = "x",
+                Width = 36,
+                Height = 36,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0)
+            };
+            close.Click += (s, args) =>
+            {
+                if (_outlinePopup != null)
+                {
+                    _outlinePopup.IsOpen = false;
+                }
+            };
+            Grid.SetColumn(close, 1);
+
+            titlePanel.Children.Add(title);
+            titlePanel.Children.Add(close);
+            Grid.SetRow(titlePanel, 0);
+            panel.Children.Add(titlePanel);
+
+            if (items == null || items.Count == 0)
+            {
+                var empty = new TextBlock
+                {
+                    Text = "No headings",
+                    FontSize = 16,
+                    Opacity = 0.7,
+                    Margin = new Thickness(20, 28, 20, 28)
+                };
+                Grid.SetRow(empty, 1);
+                panel.Children.Add(empty);
+            }
+            else
+            {
+                var list = new ListView
+                {
+                    ItemsSource = items,
+                    IsItemClickEnabled = true,
+                    SelectionMode = ListViewSelectionMode.None,
+                    Margin = new Thickness(8, 0, 8, 12),
+                    ItemTemplate = BuildOutlineItemTemplate()
+                };
+                list.ItemClick += OutlineList_ItemClick;
+                Grid.SetRow(list, 1);
+                panel.Children.Add(list);
+            }
+
+            _outlinePopup = new global::Windows.UI.Xaml.Controls.Primitives.Popup
+            {
+                Child = new Border
+                {
+                    Child = panel,
+                    BorderBrush = new SolidColorBrush(Colors.Gray),
+                    BorderThickness = new Thickness(1)
+                },
+                IsLightDismissEnabled = true
+            };
+
+            var bounds = Window.Current.Bounds;
+            _outlinePopup.HorizontalOffset = Math.Max(12, bounds.Width - 440);
+            _outlinePopup.VerticalOffset = Math.Max(12, bounds.Height - panel.MaxHeight - 82);
+            _outlinePopup.IsOpen = true;
+        }
+
+        private static DataTemplate BuildOutlineItemTemplate()
+        {
+            const string template =
+                "<DataTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">" +
+                "<Grid Padding=\"{Binding Indent}\" MinHeight=\"40\">" +
+                "<TextBlock Text=\"{Binding Title}\" FontSize=\"15\" TextTrimming=\"CharacterEllipsis\" VerticalAlignment=\"Center\"/>" +
+                "</Grid>" +
+                "</DataTemplate>";
+            return (DataTemplate)XamlReader.Load(template);
+        }
+
+        private async void OutlineList_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var item = e.ClickedItem as MarkdownOutlineItem;
+            if (item == null)
+            {
+                return;
+            }
+
+            if (_outlinePopup != null)
+            {
+                _outlinePopup.IsOpen = false;
+            }
+
+            await NavigateToOutlineItemAsync(item);
+        }
+
+        private async Task NavigateToOutlineItemAsync(MarkdownOutlineItem item)
+        {
+            FlushPendingEditorText(refreshPreview: true);
+
+            if (ViewModel == null || item == null)
+            {
+                return;
+            }
+
+            if (ViewModel.ViewMode != EditorViewMode.Preview)
+            {
+                NavigateEditorToLine(item.Line);
+            }
+
+            if (ViewModel.ViewMode != EditorViewMode.Write)
+            {
+                await RenderPreviewAsync();
+                await NavigatePreviewToOutlineItemAsync(item);
+            }
+        }
+
+        private void NavigateEditorToLine(int line)
+        {
+            if (EditorBox == null || EditorBox.Document == null)
+            {
+                return;
+            }
+
+            var text = GetNormalizedEditorText();
+            var position = GetLineStartPosition(text, line);
+            try
+            {
+                EditorBox.Focus(FocusState.Programmatic);
+                var range = EditorBox.Document.GetRange(position, position);
+                EditorBox.Document.Selection.SetRange(position, position);
+                range.ScrollIntoView(PointOptions.Start);
+            }
+            catch
+            {
+            }
+        }
+
+        private static int GetLineStartPosition(string text, int line)
+        {
+            if (line <= 0 || string.IsNullOrEmpty(text))
+            {
+                return 0;
+            }
+
+            int position = 0;
+            int currentLine = 0;
+            while (position < text.Length && currentLine < line)
+            {
+                if (text[position] == '\n')
+                {
+                    currentLine++;
+                }
+                position++;
+            }
+
+            return Math.Min(position, text.Length);
+        }
+
+        private async Task NavigatePreviewToOutlineItemAsync(MarkdownOutlineItem item)
+        {
+            if (PreviewWebView == null || !_isWebViewReady || item == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var escaped = EscapeJavaScriptString(item.AnchorId);
+                var block = item.BlockIndex.ToString(CultureInfo.InvariantCulture);
+                var script = "var el=document.querySelector('[data-block=\"" + block + "\"]');" +
+                             "if(!el){ el=document.getElementById('" + escaped + "'); }" +
+                             "if(el){ el.scrollIntoView(true); 'ok'; } else { 'missing'; }";
+                await PreviewWebView.InvokeScriptAsync("eval", new[] { script });
+            }
+            catch
+            {
+            }
+        }
+
+        private static string EscapeJavaScriptString(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("'", "\\'")
+                .Replace("\r", "")
+                .Replace("\n", "");
         }
 
         // ==========================================
