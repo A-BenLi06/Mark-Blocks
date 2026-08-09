@@ -34,7 +34,9 @@ namespace MetroMarkdownEditor.ViewModels
         private IReadOnlyList<MarkdownOutlineItem> _outlineItems = new List<MarkdownOutlineItem>();
         private bool _isSaving;
         private string _saveStatusText;
+#if WINDOWS_PHONE_APP
         private string _exportContent; // For WP8.1 continuation
+#endif
         private StorageFile _pendingFile; // File opened via file association
 
         public EditorViewModel(ThemeService themeService, RecentFileService recentFiles)
@@ -44,8 +46,6 @@ namespace MetroMarkdownEditor.ViewModels
             OpenDocuments = new ObservableCollection<DocumentViewModel>();
 
             _themeService.ThemeChanged += (s, e) => UpdatePreview();
-            MarkdownSettingsService.Instance.SettingsChanged += (s, e) => UpdatePreview();
-            EditorSettingsService.Instance.SettingsChanged += (s, e) => UpdatePreview();
 
             NewCommand = new RelayCommand(async _ => await CreateNewAsync());
             OpenCommand = new RelayCommand(async _ => await OpenFromPickerAsync());
@@ -365,6 +365,29 @@ namespace MetroMarkdownEditor.ViewModels
             }
         }
 
+        /// <summary>
+        /// Persists every file-backed dirty document during app suspension. Untitled
+        /// documents still require an explicit Save As and are intentionally skipped.
+        /// </summary>
+        public async Task SaveDirtyDocumentsAsync()
+        {
+            var dirtyDocuments = OpenDocuments
+                .Where(document => document != null && document.File != null && document.IsDirty)
+                .ToList();
+
+            foreach (var document in dirtyDocuments)
+            {
+                try
+                {
+                    await document.SaveAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("Suspend save failed: " + ex.Message);
+                }
+            }
+        }
+
         public async Task RemoveActiveAsync()
         {
             if (ActiveDocument == null)
@@ -444,8 +467,26 @@ namespace MetroMarkdownEditor.ViewModels
             }
 
             var markdown = ActiveDocument.Content ?? string.Empty;
-            PreviewCss = _themeService.BuildCss();
             var rendered = _renderService.RenderMarkdown(markdown);
+            ApplyPreviewResult(rendered, refreshCss: true);
+        }
+
+        /// <summary>
+        /// Commits a render result produced away from the UI thread. The page uses
+        /// this path for debounced typing so Markdown parsing never blocks input.
+        /// </summary>
+        public void ApplyPreviewResult(MarkdownRenderResult rendered, bool refreshCss)
+        {
+            if (rendered == null)
+            {
+                return;
+            }
+
+            if (refreshCss || string.IsNullOrEmpty(PreviewCss))
+            {
+                PreviewCss = _themeService.BuildCss();
+            }
+
             PreviewBlocks = rendered.Blocks;
             OutlineItems = rendered.Outline;
             PreviewContent = NormalizeImageSourcesInHtml(rendered.Html);
@@ -502,6 +543,13 @@ namespace MetroMarkdownEditor.ViewModels
             if (string.IsNullOrEmpty(html))
             {
                 return string.Empty;
+            }
+
+            // Most documents contain no images. Avoid two full regular-expression
+            // passes over the generated HTML on every preview refresh.
+            if (html.IndexOf("<img", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return html;
             }
 
             var normalized = Regex.Replace(html, "(<img[^>]*src=\")([^\"]*)(\"[^>]*>)", m =>

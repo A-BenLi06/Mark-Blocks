@@ -36,12 +36,14 @@ namespace MetroMarkdownEditor.Windows
         // 防抖动计时器：避免每敲一个字符就触发高亮和渲染，提高性能
         private readonly DispatcherTimer _typingTimer;
         private readonly DispatcherTimer _syntaxTimer;
-        private readonly DispatcherTimer _hotPreviewTimer;
         private readonly DispatcherTimer _previewScrollTimer;
+        private readonly DispatcherTimer _autoSaveTimer;
         
         // 渲染服务：负责生成 HTML 和 CSS
         private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
+        private readonly MarkdownRenderService _backgroundRenderService = new MarkdownRenderService();
         private readonly HttpClient _imageUploadHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        private readonly AutoSaveService _autoSave = AutoSaveService.Instance;
         
         // 撤销/重做 专用栈和计时器（用于合并短时间内的连续输入）
         private readonly DispatcherTimer _undoTimer;
@@ -61,17 +63,25 @@ namespace MetroMarkdownEditor.Windows
         private bool _pendingRender;    // 是否有挂起的渲染任务
         private ElementTheme _lastTheme = ElementTheme.Light; // 记录上次主题，用于检测切换
         private double _pendingPreviewScrollRatio;
+        private bool _hasPendingPreviewScroll;
+        private bool _isPreviewScrollRunning;
+        private int _previewScrollFailureCount;
         private int _renderGeneration;
         private bool _pendingSyntaxRefresh;
         private bool _pendingColdPreviewRefresh;
-        private MarkdownBlock _pendingHotBlock;
         private bool _isPreviewOperationRunning;
         private bool _pendingPreviewRenderRequest;
         private bool _suppressEditorScrollSync;
         private bool _isAutoPairEdit;
+        private bool _suppressTextChanged;
         private bool _editorTextDirty;
         private DocumentViewModel _dirtyEditorDocument;
         private double _lastPreviewScrollRatio = -1;
+        private DocumentViewModel _loadedEditorDocument;
+        private char? _pendingAutoPairCharacter;
+        private int _editorRevision;
+        private bool _isPreviewParseRunning;
+        private bool _isPageActive;
         
         // 编辑器的内部滚动条引用，用于同步滚动
         private ScrollViewer _editorScrollViewer;
@@ -103,19 +113,18 @@ namespace MetroMarkdownEditor.Windows
             _syntaxTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
             _syntaxTimer.Tick += SyntaxTimer_Tick;
 
-            _hotPreviewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
-            _hotPreviewTimer.Tick += HotPreviewTimer_Tick;
-
             _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             _undoTimer.Tick += UndoTimer_Tick;
 
-            _previewScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            _previewScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
             _previewScrollTimer.Tick += PreviewScrollTimer_Tick;
+
+            _autoSaveTimer = new DispatcherTimer();
+            _autoSaveTimer.Tick += AutoSaveTimer_Tick;
+            ConfigureAutoSaveTimer();
 
             // 注册事件
             EditorBox.Loaded += EditorBox_Loaded;
-            MarkdownSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
-            EditorSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
             
             // 构造时尝试应用一次样式，作为兜底防止字体异常
             ApplyEditorFormatting();
@@ -128,6 +137,15 @@ namespace MetroMarkdownEditor.Windows
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+            _isPageActive = true;
+
+            MarkdownSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            _autoSave.SettingsChanged += OnAutoSaveSettingsChanged;
+            if (_editorScrollViewer != null)
+            {
+                _editorScrollViewer.ViewChanged += OnEditorScrollViewerViewChanged;
+            }
 
             // 1. 挂载 ThemeViewModel 监听
             // 这是解决“切换主题时编辑器高亮不刷新”的关键逻辑
@@ -174,6 +192,7 @@ namespace MetroMarkdownEditor.Windows
                 
                 // 初始化编辑器内容 (SyncEditorText 内部会调用 ResetUndoRedo)
                 SyncEditorText();
+                ViewModel.RefreshPreview();
             }
 
             // 3. 初始渲染
@@ -184,6 +203,7 @@ namespace MetroMarkdownEditor.Windows
             
             // 5. 注册全局快捷键监听（即使焦点不在编辑框也能触发）
             Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
+            Window.Current.CoreWindow.CharacterReceived += CoreWindow_CharacterReceived;
         }
 
         /// <summary>
@@ -192,6 +212,8 @@ namespace MetroMarkdownEditor.Windows
         protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
             FlushPendingEditorText(refreshPreview: false);
+            _isPageActive = false;
+            _editorRevision++;
 
             // 卸载监听，防止内存泄漏
             if (_themeViewModel != null)
@@ -211,14 +233,16 @@ namespace MetroMarkdownEditor.Windows
 
             _typingTimer.Stop();
             _syntaxTimer.Stop();
-            _hotPreviewTimer.Stop();
             _undoTimer.Stop();
             _previewScrollTimer.Stop();
+            _autoSaveTimer.Stop();
             
             // 取消全局快捷键监听
             Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
+            Window.Current.CoreWindow.CharacterReceived -= CoreWindow_CharacterReceived;
             MarkdownSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
             EditorSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
+            _autoSave.SettingsChanged -= OnAutoSaveSettingsChanged;
 
             base.OnNavigatedFrom(e);
         }
@@ -228,6 +252,7 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private void CoreWindow_KeyDown(global::Windows.UI.Core.CoreWindow sender, global::Windows.UI.Core.KeyEventArgs args)
         {
+            _pendingAutoPairCharacter = null;
             var ctrlState = sender.GetKeyState(global::Windows.System.VirtualKey.Control);
             bool isCtrlPressed = (ctrlState & global::Windows.UI.Core.CoreVirtualKeyStates.Down) == global::Windows.UI.Core.CoreVirtualKeyStates.Down;
             
@@ -300,7 +325,14 @@ namespace MetroMarkdownEditor.Windows
             // 这是修复从 MainPage 再次打开同一文件时格式丢失的关键
             if (ViewModel != null && ViewModel.ActiveDocument != null)
             {
-                SyncEditorText();
+                if (!ReferenceEquals(_loadedEditorDocument, ViewModel.ActiveDocument))
+                {
+                    SyncEditorText();
+                }
+                else
+                {
+                    ApplyEditorFormatting();
+                }
             }
 
             UpdateEditorBottomSpacer();
@@ -327,11 +359,13 @@ namespace MetroMarkdownEditor.Windows
             }
 
             _pendingPreviewScrollRatio = ratio;
+            _hasPendingPreviewScroll = true;
+            _previewScrollFailureCount = 0;
 
             if (!e.IsIntermediate)
             {
-                var _ = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
                 _previewScrollTimer.Stop();
+                var _ = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
                 return;
             }
 
@@ -341,28 +375,75 @@ namespace MetroMarkdownEditor.Windows
             }
         }
 
+        private void CoreWindow_CharacterReceived(
+            global::Windows.UI.Core.CoreWindow sender,
+            global::Windows.UI.Core.CharacterReceivedEventArgs args)
+        {
+            if (EditorBox == null || EditorBox.FocusState == FocusState.Unfocused)
+            {
+                _pendingAutoPairCharacter = null;
+                return;
+            }
+
+            var ctrlState = sender.GetKeyState(global::Windows.System.VirtualKey.Control);
+            var isCtrlPressed = (ctrlState & global::Windows.UI.Core.CoreVirtualKeyStates.Down)
+                                == global::Windows.UI.Core.CoreVirtualKeyStates.Down;
+            if (isCtrlPressed || args.KeyCode > char.MaxValue)
+            {
+                _pendingAutoPairCharacter = null;
+                return;
+            }
+
+            var character = (char)args.KeyCode;
+            _pendingAutoPairCharacter = GetAutoPairClosingText(character, EditorSettingsService.Instance) != null
+                ? (char?)character
+                : null;
+        }
+
         /// <summary>
         /// 注入 JS 控制 WebView 滚动
         /// </summary>
         private async Task SyncPreviewScrollAsync(double ratio)
         {
-            if (!_isWebViewReady || PreviewWebView == null) return;
-            if (_isPreviewOperationRunning) return;
+            _pendingPreviewScrollRatio = ratio;
+            _hasPendingPreviewScroll = true;
 
-            var clamped = Math.Max(0.0, Math.Min(1.0, ratio));
-            if (Math.Abs(clamped - _lastPreviewScrollRatio) < 0.001)
+            if (!_isWebViewReady || PreviewWebView == null) return;
+            if (_isPreviewScrollRunning) return;
+            if (_isPreviewOperationRunning)
             {
+                if (!_previewScrollTimer.IsEnabled) _previewScrollTimer.Start();
                 return;
             }
 
+            var clamped = Math.Max(0.0, Math.Min(1.0, _pendingPreviewScrollRatio));
+            _hasPendingPreviewScroll = false;
+            _isPreviewScrollRunning = true;
+
             try
             {
-                _lastPreviewScrollRatio = clamped;
                 await PreviewWebView.InvokeScriptAsync("__mdScrollToRatio", new[] { clamped.ToString(CultureInfo.InvariantCulture) });
+                _lastPreviewScrollRatio = clamped;
+                _previewScrollFailureCount = 0;
             }
             catch
             {
-                // 忽略脚本执行错误（例如页面正在加载中）
+                // Navigation/content replacement can temporarily reject script
+                // calls. Keep the latest ratio queued so pointer release is never
+                // lost merely because a preview update was in flight.
+                _hasPendingPreviewScroll = true;
+                _previewScrollFailureCount++;
+            }
+            finally
+            {
+                _isPreviewScrollRunning = false;
+                if (_hasPendingPreviewScroll
+                    && _previewScrollFailureCount < 3
+                    && _isPageActive
+                    && !_previewScrollTimer.IsEnabled)
+                {
+                    _previewScrollTimer.Start();
+                }
             }
         }
 
@@ -437,7 +518,6 @@ namespace MetroMarkdownEditor.Windows
             {
                 FlushPendingEditorText(refreshPreview: false);
                 SyncEditorText();
-                ResetUndoRedo();
                 
                 // 自动滚动标签栏使当前文档可见 (平滑动画)
                 var __ = ScrollToActiveDocumentAsync();
@@ -490,6 +570,7 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private async void EditorBox_KeyDown(object sender, global::Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
+            _pendingAutoPairCharacter = null;
             var ctrlState = global::Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(global::Windows.System.VirtualKey.Control);
             bool isCtrlPressed = (ctrlState & global::Windows.UI.Core.CoreVirtualKeyStates.Down) == global::Windows.UI.Core.CoreVirtualKeyStates.Down;
 
@@ -1101,6 +1182,11 @@ namespace MetroMarkdownEditor.Windows
 
         private void DrainQueuedPreviewWork()
         {
+            if (_hasPendingPreviewScroll && !_isPreviewScrollRunning)
+            {
+                var scroll = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
+            }
+
             if (_pendingColdPreviewRefresh)
             {
                 _typingTimer.Stop();
@@ -1171,6 +1257,11 @@ namespace MetroMarkdownEditor.Windows
             }
         }
 
+        public void FlushEditorBufferForSuspension()
+        {
+            FlushPendingEditorText(refreshPreview: false);
+        }
+
         private async void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             await SaveFromShortcutAsync();
@@ -1193,14 +1284,17 @@ namespace MetroMarkdownEditor.Windows
         // ==========================================
         private void EditorBox_TextChanged(object sender, RoutedEventArgs e)
         {
-            if (_isUndoRedoLocked) return;
+            if (_isUndoRedoLocked || _suppressTextChanged || _isAutoPairEdit) return;
             if (ViewModel == null || ViewModel.ActiveDocument == null) return;
 
-            if (!_isAutoPairEdit)
+            var autoPairCharacter = _pendingAutoPairCharacter;
+            _pendingAutoPairCharacter = null;
+            if (autoPairCharacter.HasValue)
             {
-                TryApplyAutoPairAtCaret();
+                TryApplyAutoPairAtCaret(autoPairCharacter.Value);
             }
 
+            _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel.ActiveDocument;
 
@@ -1208,8 +1302,6 @@ namespace MetroMarkdownEditor.Windows
             _undoTimer.Stop();
             _undoTimer.Start();
 
-            _hotPreviewTimer.Stop();
-            _pendingHotBlock = null;
             _pendingSyntaxRefresh = true;
             _pendingColdPreviewRefresh = true;
             _syntaxTimer.Stop();
@@ -1217,10 +1309,16 @@ namespace MetroMarkdownEditor.Windows
             _typingTimer.Stop();
             _typingTimer.Start();
 
+            if (_autoSave.IsEnabled)
+            {
+                _autoSaveTimer.Stop();
+                _autoSaveTimer.Start();
+            }
+
             KeepCaretCenteredIfNeeded();
         }
 
-        private bool TryApplyAutoPairAtCaret()
+        private bool TryApplyAutoPairAtCaret(char insertedCharacter)
         {
             var settings = EditorSettingsService.Instance;
             if (!settings.AutoPairBracketsAndQuotes && !settings.AutoPairCommonMarkdownSyntax)
@@ -1237,12 +1335,12 @@ namespace MetroMarkdownEditor.Windows
 
             string insertedText = string.Empty;
             EditorBox.Document.GetRange(caret - 1, caret).GetText(TextGetOptions.None, out insertedText);
-            if (string.IsNullOrEmpty(insertedText))
+            if (string.IsNullOrEmpty(insertedText) || insertedText[0] != insertedCharacter)
             {
                 return false;
             }
 
-            var closing = GetAutoPairClosingText(insertedText[0], settings);
+            var closing = GetAutoPairClosingText(insertedCharacter, settings);
             if (closing == null)
             {
                 return false;
@@ -1346,6 +1444,33 @@ namespace MetroMarkdownEditor.Windows
             SaveSnapshot(); // 保存撤销快照
         }
 
+        private async void AutoSaveTimer_Tick(object sender, object e)
+        {
+            _autoSaveTimer.Stop();
+            if (!_autoSave.IsEnabled || ViewModel == null) return;
+
+            FlushPendingEditorText(refreshPreview: false);
+            if (ViewModel.ActiveDocument == null || ViewModel.ActiveDocument.File == null) return;
+
+            await ViewModel.AutoSaveAsync();
+            ConfigureAutoSaveTimer();
+        }
+
+        private void OnAutoSaveSettingsChanged(object sender, EventArgs e)
+        {
+            ConfigureAutoSaveTimer();
+        }
+
+        private void ConfigureAutoSaveTimer()
+        {
+            _autoSaveTimer.Stop();
+            _autoSaveTimer.Interval = TimeSpan.FromMinutes(_autoSave.FrequencyMinutes);
+            if (_autoSave.IsEnabled && _editorTextDirty)
+            {
+                _autoSaveTimer.Start();
+            }
+        }
+
         private void SyntaxTimer_Tick(object sender, object e)
         {
             _syntaxTimer.Stop();
@@ -1381,160 +1506,53 @@ namespace MetroMarkdownEditor.Windows
             }
         }
 
-        private async void HotPreviewTimer_Tick(object sender, object e)
-        {
-            _hotPreviewTimer.Stop();
-
-            var block = _pendingHotBlock;
-            _pendingHotBlock = null;
-
-            if (block == null || PreviewWebView == null || !_isWebViewReady || !ShouldRenderPreview())
-            {
-                return;
-            }
-
-            if (_isPreviewOperationRunning)
-            {
-                _pendingHotBlock = block;
-                _hotPreviewTimer.Start();
-                return;
-            }
-
-            _isPreviewOperationRunning = true;
-            try
-            {
-                await _renderService.UpdateBlockAsync(PreviewWebView, block);
-                UpdateLocalBlockCache(block);
-            }
-            catch
-            {
-            }
-            finally
-            {
-                _isPreviewOperationRunning = false;
-                DrainQueuedPreviewWork();
-            }
-        }
-
-        private void TypingTimer_Tick(object sender, object e)
+        private async void TypingTimer_Tick(object sender, object e)
         {
             _typingTimer.Stop();
 
-            if (_isPreviewOperationRunning)
+            if (_isPreviewParseRunning)
             {
-                _typingTimer.Start();
                 return;
             }
 
             if (_pendingColdPreviewRefresh && ViewModel != null)
             {
+                var document = ViewModel.ActiveDocument;
+                var revision = _editorRevision;
                 _pendingColdPreviewRefresh = false;
-                FlushPendingEditorText(refreshPreview: true);
-            }
-        }
+                var markdown = FlushPendingEditorText(refreshPreview: false);
 
-        /// <summary>
-        /// 简易的文本差异分析算法，用于判断是否可以局部刷新预览
-        /// </summary>
-        private TextChangeInfo AnalyzeChange(string previous, string current)
-        {
-            var prevLines = SplitLines(previous);
-            var currLines = SplitLines(current);
-
-            // 行数变化通常意味着结构变化，需要全量刷新
-            if (prevLines.Length != currLines.Length)
-            {
-                return new TextChangeInfo { HasChange = true, RequiresCold = true, LineIndex = Math.Min(prevLines.Length, currLines.Length) };
-            }
-
-            int diffCount = 0;
-            int diffLine = -1;
-            for (int i = 0; i < currLines.Length; i++)
-            {
-                if (!string.Equals(prevLines[i], currLines[i], StringComparison.Ordinal))
+                if (!ShouldRenderPreview() || document == null)
                 {
-                    diffCount++;
-                    if (diffLine == -1)
+                    return;
+                }
+
+                _isPreviewParseRunning = true;
+                try
+                {
+                    var rendered = await Task.Run(() => _backgroundRenderService.RenderMarkdown(markdown));
+                    if (_isPageActive
+                        && revision == _editorRevision
+                        && ReferenceEquals(document, ViewModel.ActiveDocument)
+                        && string.Equals(document.Content ?? string.Empty, markdown, StringComparison.Ordinal))
                     {
-                        diffLine = i;
+                        ViewModel.ApplyPreviewResult(rendered, refreshCss: false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("Background preview render failed: " + ex.Message);
+                }
+                finally
+                {
+                    _isPreviewParseRunning = false;
+                    if (_pendingColdPreviewRefresh && _isPageActive)
+                    {
+                        _typingTimer.Stop();
+                        _typingTimer.Start();
                     }
                 }
             }
-
-            if (diffCount == 0) return new TextChangeInfo { HasChange = false, LineIndex = -1 };
-            if (diffCount > 1) return new TextChangeInfo { HasChange = true, RequiresCold = true, LineIndex = diffLine };
-
-            var structural = IsStructuralChange(prevLines[diffLine], currLines[diffLine], previous, current);
-            return new TextChangeInfo
-            {
-                HasChange = true,
-                IsHot = !structural,
-                RequiresCold = structural,
-                LineIndex = diffLine
-            };
-        }
-
-        private bool IsStructuralChange(string previousLine, string currentLine, string previousText, string currentText)
-        {
-            var prev = previousLine ?? string.Empty;
-            var curr = currentLine ?? string.Empty;
-
-            if (Math.Abs((previousText ?? string.Empty).Length - (currentText ?? string.Empty).Length) > 120) return true;
-            if (string.IsNullOrWhiteSpace(prev) != string.IsNullOrWhiteSpace(curr)) return true;
-
-            var trimmed = curr.TrimStart();
-            if (trimmed.StartsWith("[") && trimmed.Contains("]:")) return true;
-
-            return false;
-        }
-
-        // --- 辅助方法区 (FindBlock, BuildBlock, SplitLines 等) ---
-        private MarkdownBlock FindBlockForLine(int lineIndex)
-        {
-            if (_lastBlocks == null) return null;
-            foreach (var block in _lastBlocks)
-            {
-                if (lineIndex >= block.StartLine && lineIndex <= block.EndLine) return block;
-            }
-            return null;
-        }
-
-        private MarkdownBlock BuildUpdatedBlock(MarkdownBlock template, string markdown)
-        {
-            if (template == null) return null;
-            var lines = SplitLines(markdown);
-            if (lines.Length == 0) return null;
-
-            var sb = new StringBuilder();
-            var start = Math.Max(0, template.StartLine);
-            var end = Math.Min(lines.Length - 1, template.EndLine);
-            if (start > end) return null;
-
-            for (int i = start; i <= end; i++) sb.AppendLine(lines[i]);
-
-            return new MarkdownBlock
-            {
-                Index = template.Index,
-                StartLine = start,
-                EndLine = end,
-                Text = sb.ToString()
-            };
-        }
-
-        private void UpdateLocalBlockCache(MarkdownBlock updated)
-        {
-            if (_lastBlocks == null || updated == null) return;
-            var list = new List<MarkdownBlock>(_lastBlocks);
-            if (updated.Index >= 0 && updated.Index < list.Count)
-            {
-                list[updated.Index] = updated;
-                _lastBlocks = list;
-            }
-        }
-
-        private string[] SplitLines(string text)
-        {
-            return (text ?? string.Empty).Replace("\r\n", "\n").Split('\n');
         }
 
         private bool ShouldRenderPreview()
@@ -1573,14 +1591,28 @@ namespace MetroMarkdownEditor.Windows
             if (EditorBox == null || EditorBox.Document == null) return string.Empty;
             string text = string.Empty;
             EditorBox.Document.GetText(TextGetOptions.None, out text);
-            return (text ?? string.Empty).Replace('\r', '\n').TrimEnd('\0', '\n');
+            return NormalizeRichEditText(text);
         }
 
-        private void FlushPendingEditorText(bool refreshPreview)
+        private static string NormalizeRichEditText(string text)
+        {
+            var normalized = (text ?? string.Empty).TrimEnd('\0');
+
+            // RichEditBox exposes one control-owned terminal paragraph marker.
+            // Remove exactly that marker and preserve every user-entered blank line.
+            if (normalized.EndsWith("\r", StringComparison.Ordinal))
+            {
+                normalized = normalized.Substring(0, normalized.Length - 1);
+            }
+
+            return normalized.Replace("\r\n", "\n").Replace('\r', '\n');
+        }
+
+        private string FlushPendingEditorText(bool refreshPreview)
         {
             if (!_editorTextDirty || _dirtyEditorDocument == null || EditorBox == null || EditorBox.Document == null)
             {
-                return;
+                return _lastEditorText ?? string.Empty;
             }
 
             var text = GetNormalizedEditorText();
@@ -1600,24 +1632,24 @@ namespace MetroMarkdownEditor.Windows
             _lastEditorText = text;
             _editorTextDirty = false;
             _dirtyEditorDocument = null;
+            return text;
         }
 
         private void SaveSnapshot()
         {
-            FlushPendingEditorText(refreshPreview: false);
-            var snapshot = GetNormalizedEditorText();
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
             if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
             {
                 _undoStack.Push(snapshot);
+                _redoStack.Clear();
             }
-            _redoStack.Clear();
         }
 
         private void ResetUndoRedo()
         {
             _undoStack.Clear();
             _redoStack.Clear();
-            var snapshot = GetNormalizedEditorText();
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
             _undoStack.Push(snapshot);
         }
 
@@ -1635,6 +1667,15 @@ namespace MetroMarkdownEditor.Windows
 
         private void Undo()
         {
+            // The debounce timer may not have committed the newest edit yet.
+            // Capture it as the current transaction before moving backward.
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
+            if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
+            {
+                _undoStack.Push(snapshot);
+                _redoStack.Clear();
+            }
+
             if (_undoStack.Count <= 1) return;
             _isUndoRedoLocked = true;
             try
@@ -1674,8 +1715,13 @@ namespace MetroMarkdownEditor.Windows
             if (EditorBox == null || EditorBox.Document == null) return;
 
             _undoTimer.Stop();
-            EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
-            _lastEditorText = (text ?? string.Empty).Replace('\r', '\n');
+            _typingTimer.Stop();
+            _syntaxTimer.Stop();
+            _pendingColdPreviewRefresh = false;
+            _pendingSyntaxRefresh = false;
+            _editorRevision++;
+            SetEditorTextWithoutNotification(text);
+            _lastEditorText = NormalizeLineEndings(text);
             _editorTextDirty = false;
             _dirtyEditorDocument = null;
             
@@ -1687,6 +1733,7 @@ namespace MetroMarkdownEditor.Windows
             {
                 ViewModel.SetContentFromEditor(text);
                 ViewModel.RefreshPreview();
+                _loadedEditorDocument = ViewModel.ActiveDocument;
             }
             var _ = RenderPreviewAsync();
             UpdateEditorBottomSpacer();
@@ -1755,8 +1802,9 @@ namespace MetroMarkdownEditor.Windows
 
             var content = await FileIO.ReadTextAsync(file);
 
-            _lastEditorText = (content ?? string.Empty).Replace("\r\n", "\n");
-            EditorBox.Document.SetText(TextSetOptions.None, content ?? string.Empty);
+            _editorRevision++;
+            _lastEditorText = NormalizeLineEndings(content);
+            SetEditorTextWithoutNotification(content);
             
             // 漏掉的修复：打开文件后也必须强力纠正格式
             ApplyEditorFormatting();
@@ -1766,6 +1814,7 @@ namespace MetroMarkdownEditor.Windows
             {
                 ViewModel.SetContentFromEditor(content);
                 ViewModel.RefreshPreview();
+                _loadedEditorDocument = ViewModel.ActiveDocument;
             }
 
             if (_isWebViewReady)
@@ -1797,8 +1846,17 @@ namespace MetroMarkdownEditor.Windows
             if (ViewModel != null && ViewModel.ActiveDocument != null && EditorBox != null)
             {
                 var text = ViewModel.ActiveDocument.Content ?? string.Empty;
-                _lastEditorText = text.Replace("\r\n", "\n");
-                EditorBox.Document.SetText(TextSetOptions.None, text);
+                _editorRevision++;
+                _typingTimer.Stop();
+                _syntaxTimer.Stop();
+                _pendingColdPreviewRefresh = false;
+                _pendingSyntaxRefresh = false;
+                _lastEditorText = NormalizeLineEndings(text);
+                _editorTextDirty = false;
+                _dirtyEditorDocument = null;
+                _loadedEditorDocument = ViewModel.ActiveDocument;
+                _lastPreviewScrollRatio = -1;
+                SetEditorTextWithoutNotification(text);
                 
                 // 每次 SetText 后立即应用格式，然后再高亮
                 ApplyEditorFormatting();
@@ -1807,6 +1865,25 @@ namespace MetroMarkdownEditor.Windows
                 ResetUndoRedo();
                 UpdateEditorBottomSpacer();
             }
+        }
+
+        private void SetEditorTextWithoutNotification(string text)
+        {
+            _suppressTextChanged = true;
+            try
+            {
+                EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
+            }
+            finally
+            {
+                _suppressTextChanged = false;
+                _pendingAutoPairCharacter = null;
+            }
+        }
+
+        private static string NormalizeLineEndings(string text)
+        {
+            return (text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
         }
 
         /// <summary>
@@ -2004,6 +2081,8 @@ namespace MetroMarkdownEditor.Windows
         private async void PreviewWebView_NavigationCompleted(WebView sender, WebViewNavigationCompletedEventArgs args)
         {
             _isWebViewReady = true;
+            _lastPreviewScrollRatio = -1;
+            _previewScrollFailureCount = 0;
 
             // 如果此时编辑器已有内容，尝试同步一次预览
             if (EditorBox != null && EditorBox.Document != null)
@@ -2021,6 +2100,11 @@ namespace MetroMarkdownEditor.Windows
             {
                 _pendingRender = false;
                 await RenderPreviewAsync();
+            }
+
+            if (_hasPendingPreviewScroll)
+            {
+                await SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
             }
         }
 
@@ -2046,17 +2130,6 @@ namespace MetroMarkdownEditor.Windows
             }
             return null;
         }
-        /// <summary>
-        /// 文本变更分析结果结构体
-        /// </summary>
-        private struct TextChangeInfo
-        {
-            public bool HasChange;      // 是否有实质性变化
-            public bool IsHot;          // 是否可以热更新（局部刷新）
-            public bool RequiresCold;   // 是否需要冷更新（全量刷新）
-            public int LineIndex;       // 发生变化的行号
-        }
-
         // ==========================================
         // Outline
         // ==========================================

@@ -145,10 +145,32 @@ namespace MetroMarkdownEditor
         }
 #endif
 
-        private void OnSuspending(object sender, SuspendingEventArgs e)
+        private async void OnSuspending(object sender, SuspendingEventArgs e)
         {
             var deferral = e.SuspendingOperation.GetDeferral();
-            deferral.Complete();
+            try
+            {
+                var frame = Window.Current.Content as Frame;
+#if WINDOWS_PHONE_APP
+                var editorPage = frame != null ? frame.Content as WindowsPhone.EditorPage : null;
+#else
+                var editorPage = frame != null ? frame.Content as Windows.EditorPage : null;
+#endif
+                if (editorPage != null)
+                {
+                    editorPage.FlushEditorBufferForSuspension();
+                }
+
+                var locator = Resources["Locator"] as ViewModelLocator;
+                if (locator != null)
+                {
+                    await locator.Editor.SaveDirtyDocumentsAsync();
+                }
+            }
+            finally
+            {
+                deferral.Complete();
+            }
         }
 
         /// <summary>

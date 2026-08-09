@@ -27,12 +27,14 @@ namespace MetroMarkdownEditor.WindowsPhone
         private readonly DispatcherTimer _undoTimer;
         private readonly DispatcherTimer _autoSaveTimer;
         private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
+        private readonly MarkdownRenderService _backgroundRenderService = new MarkdownRenderService();
         private readonly AutoSaveService _autoSave = AutoSaveService.Instance;
         private readonly Stack<string> _undoStack = new Stack<string>();
         private readonly Stack<string> _redoStack = new Stack<string>();
 
         private bool _isUndoRedoLocked;
         private bool _isAutoPairEdit;
+        private bool _suppressTextChanged;
         private bool _editorTextDirty;
         private DocumentViewModel _dirtyEditorDocument;
         private string _lastEditorText = string.Empty;
@@ -44,6 +46,11 @@ namespace MetroMarkdownEditor.WindowsPhone
         private ElementTheme _lastTheme = ElementTheme.Light;
         private PreviewThemeType _lastPreviewTheme = PreviewThemeType.Grey;
         private INotifyPropertyChanged _themeViewModel;
+        private char? _pendingAutoPairCharacter;
+        private int _editorRevision;
+        private bool _isPreviewParseRunning;
+        private bool _isPageActive;
+        private DocumentViewModel _loadedEditorDocument;
 
         // 搜索功能状态变量
         private int _lastSearchIndex = -1;
@@ -77,12 +84,9 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             _autoSaveTimer = new DispatcherTimer();
             _autoSaveTimer.Tick += AutoSaveTimer_Tick;
-            _autoSave.SettingsChanged += OnAutoSaveSettingsChanged;
 
             // Register EditorBox Loaded for robust font handling after navigation
             EditorBox.Loaded += EditorBox_Loaded;
-            MarkdownSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
-            EditorSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
 
             ConfigureAutoSaveTimer();
             ApplyRuntimeEditorSettings();
@@ -95,6 +99,11 @@ namespace MetroMarkdownEditor.WindowsPhone
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+            _isPageActive = true;
+            _autoSave.SettingsChanged += OnAutoSaveSettingsChanged;
+            MarkdownSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            Window.Current.CoreWindow.CharacterReceived += CoreWindow_CharacterReceived;
 
             // Register hardware back button
             HardwareButtons.BackPressed += HardwareButtons_BackPressed;
@@ -145,6 +154,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
                 // Sync editor text
                 SyncEditorText();
+                ViewModel.RefreshPreview();
             }
 
             // Reset view mode
@@ -158,6 +168,8 @@ namespace MetroMarkdownEditor.WindowsPhone
         protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
             FlushPendingEditorText(refreshPreview: false);
+            _isPageActive = false;
+            _editorRevision++;
             base.OnNavigatedFrom(e);
 
             // Unregister hardware back button
@@ -177,11 +189,17 @@ namespace MetroMarkdownEditor.WindowsPhone
             _autoSave.SettingsChanged -= OnAutoSaveSettingsChanged;
             MarkdownSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
             EditorSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
+            Window.Current.CoreWindow.CharacterReceived -= CoreWindow_CharacterReceived;
 
             // Stop timers
             _typingTimer.Stop();
             _undoTimer.Stop();
             _autoSaveTimer.Stop();
+        }
+
+        public void FlushEditorBufferForSuspension()
+        {
+            FlushPendingEditorText(refreshPreview: false);
         }
 
         private async void HardwareButtons_BackPressed(object sender, BackPressedEventArgs e)
@@ -237,6 +255,11 @@ namespace MetroMarkdownEditor.WindowsPhone
                     break;
             }
 
+            if (_currentViewMode == EditorViewMode.Preview)
+            {
+                FlushPendingEditorText(refreshPreview: true);
+            }
+
             UpdateViewMode();
             var _ = RenderPreviewAsync();
         }
@@ -290,10 +313,12 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (EditorBox?.Document == null) return;
 
             var content = ViewModel.ActiveDocument.Content ?? string.Empty;
-            EditorBox.Document.SetText(TextSetOptions.None, content);
-            _lastEditorText = content.Replace('\r', '\n');
+            _editorRevision++;
+            SetEditorTextWithoutNotification(content);
+            _lastEditorText = NormalizeLineEndings(content);
             _editorTextDirty = false;
             _dirtyEditorDocument = null;
+            _loadedEditorDocument = ViewModel.ActiveDocument;
 
             ApplyEditorFormatting();
             ResetUndoRedo();
@@ -309,8 +334,34 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             if (ViewModel != null && ViewModel.ActiveDocument != null)
             {
-                SyncEditorText();
+                if (!ReferenceEquals(_loadedEditorDocument, ViewModel.ActiveDocument))
+                {
+                    SyncEditorText();
+                }
+                else
+                {
+                    ApplyEditorFormatting();
+                }
             }
+        }
+
+        private void SetEditorTextWithoutNotification(string text)
+        {
+            _suppressTextChanged = true;
+            try
+            {
+                EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
+            }
+            finally
+            {
+                _suppressTextChanged = false;
+                _pendingAutoPairCharacter = null;
+            }
+        }
+
+        private static string NormalizeLineEndings(string text)
+        {
+            return (text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
         }
 
         /// <summary>
@@ -358,6 +409,31 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         #region Editor Events
 
+        private void CoreWindow_CharacterReceived(
+            Windows.UI.Core.CoreWindow sender,
+            Windows.UI.Core.CharacterReceivedEventArgs args)
+        {
+            if (EditorBox == null || EditorBox.FocusState == FocusState.Unfocused)
+            {
+                _pendingAutoPairCharacter = null;
+                return;
+            }
+
+            var ctrlState = sender.GetKeyState(Windows.System.VirtualKey.Control);
+            var isCtrlPressed = (ctrlState & Windows.UI.Core.CoreVirtualKeyStates.Down)
+                                == Windows.UI.Core.CoreVirtualKeyStates.Down;
+            if (isCtrlPressed || args.KeyCode > char.MaxValue)
+            {
+                _pendingAutoPairCharacter = null;
+                return;
+            }
+
+            var character = (char)args.KeyCode;
+            _pendingAutoPairCharacter = GetAutoPairClosingText(character, EditorSettingsService.Instance) != null
+                ? (char?)character
+                : null;
+        }
+
         private void EditorBox_TextChanged(object sender, RoutedEventArgs e)
         {
             HandleTextChanged(EditorBox);
@@ -367,15 +443,18 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private void HandleTextChanged(RichEditBox editor)
         {
-            if (_isUndoRedoLocked) return;
+            if (_isUndoRedoLocked || _suppressTextChanged || _isAutoPairEdit) return;
             if (ViewModel?.ActiveDocument == null) return;
             if (editor?.Document == null) return;
 
-            if (!_isAutoPairEdit)
+            var autoPairCharacter = _pendingAutoPairCharacter;
+            _pendingAutoPairCharacter = null;
+            if (autoPairCharacter.HasValue)
             {
-                TryApplyAutoPairAtCaret(editor);
+                TryApplyAutoPairAtCaret(editor, autoPairCharacter.Value);
             }
 
+            _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel.ActiveDocument;
 
@@ -395,7 +474,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             KeepCaretCenteredIfNeeded();
         }
 
-        private bool TryApplyAutoPairAtCaret(RichEditBox editor)
+        private bool TryApplyAutoPairAtCaret(RichEditBox editor, char insertedCharacter)
         {
             var settings = EditorSettingsService.Instance;
             if (!settings.AutoPairBracketsAndQuotes && !settings.AutoPairCommonMarkdownSyntax) return false;
@@ -406,9 +485,9 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             string insertedText;
             editor.Document.GetRange(caret - 1, caret).GetText(TextGetOptions.None, out insertedText);
-            if (string.IsNullOrEmpty(insertedText)) return false;
+            if (string.IsNullOrEmpty(insertedText) || insertedText[0] != insertedCharacter) return false;
 
-            var closing = GetAutoPairClosingText(insertedText[0], settings);
+            var closing = GetAutoPairClosingText(insertedCharacter, settings);
             if (closing == null) return false;
 
             string nextText = string.Empty;
@@ -499,6 +578,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private void EditorBox_KeyDown(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
+            _pendingAutoPairCharacter = null;
             HandleKeyDown(EditorBox, e);
         }
 
@@ -653,23 +733,29 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             _undoStack.Clear();
             _redoStack.Clear();
-            var snapshot = GetNormalizedEditorText();
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
             _undoStack.Push(snapshot);
         }
 
         private void SaveSnapshot()
         {
-            FlushPendingEditorText(refreshPreview: false);
-            var snapshot = GetNormalizedEditorText();
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
             if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
             {
                 _undoStack.Push(snapshot);
+                _redoStack.Clear();
             }
-            _redoStack.Clear();
         }
 
         private void Undo()
         {
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
+            if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
+            {
+                _undoStack.Push(snapshot);
+                _redoStack.Clear();
+            }
+
             if (_undoStack.Count <= 1) return;
 
             _isUndoRedoLocked = true;
@@ -708,14 +794,24 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (EditorBox?.Document == null) return string.Empty;
             string text;
             EditorBox.Document.GetText(TextGetOptions.None, out text);
-            return (text ?? "").Replace('\r', '\n').TrimEnd('\0', '\n');
+            return NormalizeRichEditText(text);
         }
 
-        private void FlushPendingEditorText(bool refreshPreview)
+        private static string NormalizeRichEditText(string text)
+        {
+            var normalized = (text ?? string.Empty).TrimEnd('\0');
+            if (normalized.EndsWith("\r", StringComparison.Ordinal))
+            {
+                normalized = normalized.Substring(0, normalized.Length - 1);
+            }
+            return NormalizeLineEndings(normalized);
+        }
+
+        private string FlushPendingEditorText(bool refreshPreview)
         {
             if (!_editorTextDirty || _dirtyEditorDocument == null || EditorBox?.Document == null)
             {
-                return;
+                return _lastEditorText ?? string.Empty;
             }
 
             var text = GetNormalizedEditorText();
@@ -735,6 +831,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             _lastEditorText = text;
             _editorTextDirty = false;
             _dirtyEditorDocument = null;
+            return text;
         }
 
         private void ApplySnapshot(string text)
@@ -742,8 +839,10 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (EditorBox?.Document == null) return;
 
             _undoTimer.Stop();
-            EditorBox.Document.SetText(TextSetOptions.None, text ?? "");
-            _lastEditorText = (text ?? "").Replace('\r', '\n');
+            _typingTimer.Stop();
+            _editorRevision++;
+            SetEditorTextWithoutNotification(text);
+            _lastEditorText = NormalizeLineEndings(text);
             _editorTextDirty = false;
             _dirtyEditorDocument = null;
 
@@ -752,6 +851,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             ViewModel?.SetContentFromEditor(text);
             ViewModel?.RefreshPreview();
+            _loadedEditorDocument = ViewModel?.ActiveDocument;
             // Note: RenderPreviewAsync will be triggered by ViewModel.PreviewContent change
         }
 
@@ -759,12 +859,45 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         #region Timers
 
-        private void TypingTimer_Tick(object sender, object e)
+        private async void TypingTimer_Tick(object sender, object e)
         {
             _typingTimer.Stop();
-            FlushPendingEditorText(refreshPreview: true);
+            if (_isPreviewParseRunning) return;
+
+            var document = ViewModel?.ActiveDocument;
+            var revision = _editorRevision;
+            var markdown = FlushPendingEditorText(refreshPreview: false);
             HighlightMarkdownSyntax();
-            // Note: RenderPreviewAsync will be triggered by ViewModel.PreviewContent change
+
+            if (_currentViewMode != EditorViewMode.Preview || document == null)
+            {
+                return;
+            }
+
+            _isPreviewParseRunning = true;
+            try
+            {
+                var rendered = await Task.Run(() => _backgroundRenderService.RenderMarkdown(markdown));
+                if (_isPageActive
+                    && revision == _editorRevision
+                    && ReferenceEquals(document, ViewModel?.ActiveDocument)
+                    && string.Equals(document.Content ?? string.Empty, markdown, StringComparison.Ordinal))
+                {
+                    ViewModel.ApplyPreviewResult(rendered, refreshCss: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Background preview render failed: " + ex.Message);
+            }
+            finally
+            {
+                _isPreviewParseRunning = false;
+                if (_editorTextDirty && _isPageActive)
+                {
+                    _typingTimer.Start();
+                }
+            }
         }
 
         private void UndoTimer_Tick(object sender, object e)
@@ -977,7 +1110,6 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 FlushPendingEditorText(refreshPreview: false);
                 SyncEditorText();
-                ResetUndoRedo();
             }
         }
 
