@@ -1,0 +1,36 @@
+---
+import Icon from "./Icon.astro";
+// 4 feature Live Tiles - flip front (icon+title) <-> back (screenshot).
+// Back images live in /public/shots/. See SHOTS needed:
+//   feature-writing.png, feature-preview.png, feature-find.png, feature-export.png
+const features = [
+  { icon: "edit",       title: "Markdown 书写", desc: "基于 RichEditBox 的流畅输入体验。", color: "tile-cyan",    size: "tile-wide", shot: "/shots/feature-writing.png", delay: "0s" },
+  { icon: "eye",        title: "Markdown 预览", desc: "IE11 WebView 实时渲染，text-justify 整齐排版。", color: "tile-magenta", size: "tile-wide", shot: "/shots/feature-preview.png", delay: "-2.6s" },
+  { icon: "search",     title: "Ctrl+F 查找",   desc: "快速定位文档内容。", color: "tile-emerald", size: "tile-wide", shot: "/shots/feature-find.png", delay: "-5.3s" },
+  { icon: "exportfile", title: "导出 HTML",     desc: "一键导出为独立 HTML 文件。", color: "tile-amber",   size: "tile-wide", shot: "/shots/feature-export.png", delay: "-7.9s" },
+];
+---
+
+<div class="tile-grid">
+  {
+    features.map((f) => (
+      <article class={`tile-flip ${f.size}`}>
+        <div class="tile-flip-inner" style={`animation-delay: ${f.delay}`}>
+          <div class={`tile ${f.color} tile-face tile-face-front feature`}>
+            <div class="tile-icon"><Icon name={f.icon} size={34} /></div>
+            <h3 class="feature-title">{f.title}</h3>
+            <p class="feature-desc">{f.desc}</p>
+          </div>
+          <div
+            class="tile-face tile-face-back"
+            style={`background-image: url('${f.shot}');`}
+            role="img"
+            aria-label={`${f.title} 截图`}
+          >
+            <div class="tile-face-label">{f.title}</div>
+          </div>
+        </div>
+      </article>
+    ))
+  }
+</div>

@@ -1,0 +1,76 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+import { docsNav, getNeighbor } from "../data/docsNav";
+
+interface Frontmatter {
+  title: string;
+  eyebrow?: string;
+  lead?: string;
+}
+
+interface Props {
+  frontmatter: Frontmatter;
+}
+
+const { frontmatter } = Astro.props as Props;
+const { title, eyebrow = "DOCUMENTATION", lead = "" } = frontmatter;
+
+const path = Astro.url.pathname;
+const current = path.endsWith("/") ? path : path + "/";
+const neighbor = getNeighbor(current);
+---
+
+<BaseLayout title={`${title} - Mark::Blocks 文档`} description={lead}>
+  <div class="docs-shell">
+    <aside class="docs-side">
+      <div class="docs-side-head">文档</div>
+      {
+        docsNav.map((g) => (
+          <div class="docs-side-group">
+            <div class="docs-side-group-title">{g.group}</div>
+            {g.items.map((it) => (
+              <a href={it.slug} class={it.slug === current ? "is-active" : ""}>
+                {it.title}
+              </a>
+            ))}
+          </div>
+        ))
+      }
+    </aside>
+
+    <main class="docs-main">
+      <header class="docs-header">
+        <div class="docs-eyebrow">{eyebrow}</div>
+        <h1 class="docs-h1">{title}</h1>
+        {lead && <p class="docs-lead">{lead}</p>}
+      </header>
+
+      <div class="prose">
+        <slot />
+      </div>
+
+      {
+        (neighbor.prev || neighbor.next) && (
+          <nav class="docs-pager">
+            {neighbor.prev ? (
+              <a href={neighbor.prev.slug}>
+                <div class="pager-label">← 上一页</div>
+                <div class="pager-title">{neighbor.prev.title}</div>
+              </a>
+            ) : (
+              <span />
+            )}
+            {neighbor.next ? (
+              <a href={neighbor.next.slug} class="pager-next">
+                <div class="pager-label">下一页 →</div>
+                <div class="pager-title">{neighbor.next.title}</div>
+              </a>
+            ) : (
+              <span />
+            )}
+          </nav>
+        )
+      }
+    </main>
+  </div>
+</BaseLayout>

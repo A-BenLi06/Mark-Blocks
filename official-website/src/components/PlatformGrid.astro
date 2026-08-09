@@ -1,0 +1,22 @@
+---
+import Icon from "./Icon.astro";
+// 3 platform tiles: large(2x2) + tall + tall (gap-free on 4-col x 2-row).
+const platforms = [
+  { icon: "device", name: "Windows 8.1+",        desc: "桌面、平板、二合一设备。Split View 双分屏体验。", color: "tile-cyan",    size: "tile-large" },
+  { icon: "tablet", name: "Windows RT 8.1+",     desc: "ARM 设备完整支持。", color: "tile-magenta", size: "tile-tall" },
+  { icon: "phone",  name: "Windows Phone 8.1+",  desc: "手机端沉浸模式，纯净编写或预览。", color: "tile-emerald", size: "tile-tall" },
+];
+---
+
+<div class="tile-grid">
+  {
+    platforms.map((p) => (
+      <article class={`tile ${p.color} ${p.size} platform`}>
+        <div class="platform-glyph"><Icon name={p.icon} size={p.size === "tile-large" ? 80 : 56} /></div>
+        <h3 class="platform-name">{p.name}</h3>
+        <p class="platform-desc">{p.desc}</p>
+        <span class="tile-brand" />
+      </article>
+    ))
+  }
+</div>

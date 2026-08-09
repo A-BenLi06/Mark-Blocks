@@ -1,0 +1,39 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Hero from "../components/Hero.astro";
+import Section from "../components/Section.astro";
+import FeatureGrid from "../components/FeatureGrid.astro";
+import TechGrid from "../components/TechGrid.astro";
+import SpecialGrid from "../components/SpecialGrid.astro";
+import PlatformGrid from "../components/PlatformGrid.astro";
+import Screenshots from "../components/Screenshots.astro";
+import Download from "../components/Download.astro";
+---
+
+<BaseLayout>
+  <Hero />
+
+  <Section id="features" title="功能" en="FEATURES" desc="为书写与预览而生的核心能力。">
+    <FeatureGrid />
+  </Section>
+
+  <Section id="tech" title="技术选型" en="STACK" desc="为 Windows Phone 8.1 兼容性精心挑选的依赖。" alt>
+    <TechGrid />
+  </Section>
+
+  <Section id="special" title="特色小功能" en="HIGHLIGHTS" desc="在细节里看见 Metro 的克制与诚意。">
+    <SpecialGrid />
+  </Section>
+
+  <Section id="platforms" title="运行平台" en="PLATFORMS" desc="基于 Metro UI / Modern Design，覆盖一个时代。" accent>
+    <PlatformGrid />
+  </Section>
+
+  <Section id="screenshots" title="屏幕截图" en="SCREENSHOTS" desc="Windows 桌面 & Windows Phone 实机预览。">
+    <Screenshots />
+  </Section>
+
+  <Section id="download" title="下载" en="DOWNLOAD" desc="从源码构建，或关注后续 Release。" dark>
+    <Download />
+  </Section>
+</BaseLayout>

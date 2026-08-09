@@ -1,0 +1,45 @@
+---
+const desktopShots = [
+  "a69dbccf-3248-4c4d-b4c2-acb965868cdb",
+  "1e177168-0faa-43d5-b335-5bc4e12a03e9",
+  "c728b330-ef1a-4780-ab98-16ef0b7de65d",
+  "b603aa39-1f2c-44d9-81ac-1cd27aecaa46",
+  "59f61440-0fb6-4454-af7d-ac843604a52f",
+  "86f3a9d1-9309-4e16-91c8-f41c921dcac9",
+  "95e9c448-05d7-42ac-a637-6da8d6ecbc93",
+  "c06878df-6ec0-48f1-b326-c0c6cff2ea4a",
+  "6caaecdf-f906-4cfe-b782-7cd3c5762970",
+  "4118fe5e-5357-43b9-8763-d05d5ee63c9f",
+  "c494d8b4-07e4-4122-8ef1-4b9324f44494",
+  "a1d1b651-8493-4bdd-9fc5-ca6694426fb6",
+];
+const phoneShots = [
+  "979f4712-b673-407b-a3bc-2a8238a94f35",
+  "55a585ed-b5d6-49ff-92d0-1f1e446fc0c2",
+  "ad9221be-99cd-4ae1-84b3-a42685296745",
+  "b29c52cf-483d-4a93-bebb-729e0adeafa0",
+];
+const base = "https://github.com/user-attachments/assets/";
+---
+
+<h3 class="subsection-title">Windows</h3>
+<div class="shot-grid shot-grid-desktop">
+  {
+    desktopShots.map((id) => (
+      <figure class="shot tile-shot">
+        <img src={`${base}${id}`} alt="Mark::Blocks Windows 截图" loading="lazy" />
+      </figure>
+    ))
+  }
+</div>
+
+<h3 class="subsection-title">Windows Phone</h3>
+<div class="shot-grid shot-grid-phone">
+  {
+    phoneShots.map((id) => (
+      <figure class="shot tile-shot">
+        <img src={`${base}${id}`} alt="Mark::Blocks Windows Phone 截图" loading="lazy" />
+      </figure>
+    ))
+  }
+</div>

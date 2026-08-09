@@ -1,0 +1,43 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Section from "../../components/Section.astro";
+import Icon from "../../components/Icon.astro";
+import { docsNav, docsFlat } from "../../data/docsNav";
+
+const colors = ["tile-cyan", "tile-magenta", "tile-emerald", "tile-amber", "tile-violet", "tile-teal", "tile-cyan", "tile-magenta", "tile-emerald"];
+const sizes = ["tile-wide", "", "", "", "tile-wide", "", "", "", "tile-wide"];
+const icons = ["getting-started","platforms","features","usage","customization","tech-stack","shortcuts","search","feedback"];
+const iconMap = ["download","device","grid","edit","color","code","search","list","feedback"];
+const all = docsFlat;
+---
+
+<BaseLayout title="文档 - Mark::Blocks" description="Mark::Blocks 文档首页。">
+  <Section title="文档" en="DOCS" desc="从构建到上手，从功能到 FAQ。一切关于 Mark::Blocks 的说明。">
+    <div class="tile-grid">
+      {
+        all.map((it, i) => (
+          <a href={it.slug} class={`tile ${colors[i % colors.length]} ${sizes[i % sizes.length]} feature is-link`}>
+            <div class="tile-icon"><Icon name={iconMap[i % iconMap.length]} size={34} /></div>
+            <div class="tile-label">{String(i + 1).padStart(2, "0")}</div>
+            <h3 class="feature-title">{it.title}</h3>
+            <p class="feature-desc">{it.desc}</p>
+            <span class="tile-brand" />
+          </a>
+        ))
+      }
+    </div>
+
+    <div class="tile-grid tile-grid-3" style="margin-top: 8px; grid-auto-rows: 130px;">
+      {
+        docsNav.map((g, i) => (
+          <div class={`tile ${["tile-dark", "tile-cyan", "tile-magenta"][i % 3]}`} style="grid-column: span 1;">
+            <div class="tile-label">{g.group.toUpperCase()}</div>
+            <h3 class="tech-name">{g.group}</h3>
+            <p class="tech-desc">{g.items.map((it) => it.title).join(" · ")}</p>
+            <span class="tile-brand" />
+          </div>
+        ))
+      }
+    </div>
+  </Section>
+</BaseLayout>

@@ -1,0 +1,29 @@
+---
+import Icon from "./Icon.astro";
+// 9 special tiles, diagonal wide pattern (gap-free on 4-col).
+const specials = [
+  { num: "01", icon: "tilehome",   title: "磁贴主页",          desc: "主页以磁贴风格显示最近打开的文件。", color: "tile-magenta", size: "tile-wide" },
+  { num: "02", icon: "tabs",       title: "Metro 标签页",      desc: "Metro 风格文件标签页，支持平滑跳转。", color: "tile-cyan",    size: "" },
+  { num: "03", icon: "layers",     title: "Split View 双分屏", desc: "Windows 独占编写/预览双分屏。", color: "tile-emerald", size: "" },
+  { num: "04", icon: "sync",       title: "智能同步滚动",      desc: "滚动 RichEditBox 同步，滚动 WebView 独立。", color: "tile-amber",   size: "" },
+  { num: "05", icon: "fullscreen", title: "沉浸模式",          desc: "Windows Phone 独占，隐藏文件标签页。", color: "tile-violet",  size: "tile-wide" },
+  { num: "06", icon: "color",      title: "三种预览底色",      desc: "灰 #1d1d1d、AMOLED Black、Tokyo Night。", color: "tile-teal",    size: "" },
+  { num: "07", icon: "save",       title: "可调自动保存",      desc: "可开关、可选择频率的自动保存。", color: "tile-cyan",    size: "" },
+  { num: "08", icon: "color",      title: "Accent 颜色",       desc: "可选与系统一致或默认青色。", color: "tile-magenta", size: "" },
+  { num: "09", icon: "undo",       title: "Undo / Redo",       desc: "完整的撤销重做支持。", color: "tile-emerald", size: "tile-wide" },
+];
+---
+
+<div class="tile-grid">
+  {
+    specials.map((s) => (
+      <article class={`tile ${s.color} ${s.size} special`}>
+        <div class="tile-icon"><Icon name={s.icon} size={34} /></div>
+        <span class="special-num">{s.num}</span>
+        <h3 class="special-title">{s.title}</h3>
+        <p class="special-desc">{s.desc}</p>
+        <span class="tile-brand" />
+      </article>
+    ))
+  }
+</div>

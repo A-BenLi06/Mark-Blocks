@@ -1,0 +1,1088 @@
+/* =========================================================
+   Mark::Blocks · Official Website
+   Microsoft Design Language ("Metro") - Windows 8 / 8.1 era.
+   Strict adherence to the official spec:
+   - Dark theme (#1D1D1D app surface, #000 AMOLED) - Win8 app default.
+   - Windows Phone accent palette (exact hex).
+   - Win8.1 type ramp with named Segoe UI faces (Light/Semilight/Regular).
+   - 120px left content bleed (Win8 default margin).
+   - Tile ratios medium:wide:large = 1:2:2, ~6-10px gutters.
+   - Monochrome geometric icons only (Segoe UI Symbol style). No emoji.
+   - Win8.1 App Bar: bottom, dark, rectangular icon+label buttons.
+   - Solid colors only. No gradients. No shadows. No rounded corners
+     on tiles/surfaces. No blur. No glass.
+   ========================================================= */
+
+:root {
+    /* ---- Surface (Win8 dark theme) ---- */
+    --c-bg:        #1d1d1d;   /* Win8 app dark background (app's own "灰色" bg) */
+    --c-bg-alt:    #000000;   /* AMOLED black (app's own bg option) */
+    --c-bg-elev:   #262626;   /* slightly raised surface */
+    --c-ink:       #ffffff;
+    --c-ink-soft:  #b8b8b8;
+    --c-ink-mute:  #8a8a8a;
+    --c-line:      #3a3a3a;
+    --c-line-soft: #2a2a2a;
+
+    /* ---- Windows Phone accent palette (canonical Metro, exact hex) ---- */
+    --c-cyan:      #1ba1e2;   /* default Metro accent */
+    --c-cobalt:    #0050ef;
+    --c-indigo:    #6a00ff;
+    --c-violet:    #aa00ff;
+    --c-pink:      #f472d0;
+    --c-magenta:   #d80073;
+    --c-crimson:   #a20025;
+    --c-red:       #e51400;
+    --c-orange:    #fa6800;
+    --c-amber:     #f0a30a;
+    --c-yellow:    #e3c800;
+    --c-lime:      #a2c139;
+    --c-green:     #60a917;
+    --c-emerald:   #008a00;
+    --c-teal:      #00aba9;
+    --c-brown:     #825a2c;
+    --c-olive:     #6d8764;
+    --c-steel:     #647687;
+    --c-mauve:     #76608a;
+    --c-sienna:    #7e3878;
+
+    --accent:      var(--c-cyan);
+
+    /* ---- Tile metrics ---- */
+    --tile-pad:    22px;
+    --gap:         8px;
+
+    --maxw:        1320px;
+    --pad-left:    clamp(20px, 7vw, 120px);   /* Win8 default left margin */
+    --pad-y:       clamp(64px, 8vw, 120px);
+
+    /* ---- Win8.1 type ramp (named Segoe UI faces) ---- */
+    --ff-light:     "Segoe UI Light", "Segoe UI", "HelveticaNeue-Thin",
+                    "Helvetica Neue", Helvetica, Arial, "Microsoft YaHei UI", sans-serif;
+    --ff-semilight: "Segoe UI Semilight", "Segoe UI", "HelveticaNeue-Light",
+                    "Helvetica Neue", Helvetica, Arial, "Microsoft YaHei UI", sans-serif;
+    --ff-regular:   "Segoe UI", "Helvetica Neue", Helvetica, Arial,
+                    "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    --ff-mono:      "Consolas", "Cascadia Code", "SF Mono", Menlo, monospace;
+
+    --appbar-h:    76px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: var(--ff-regular);
+    background: var(--c-bg);
+    color: var(--c-ink);
+    font-weight: 400;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    padding-bottom: var(--appbar-h);
+}
+
+img { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+ul, ol { list-style: none; }
+
+::selection { background: var(--accent); color: #fff; }
+
+/* Icon component (Fluent UI System Icons - filled, currentColor) */
+.icon { display: inline-block; line-height: 0; vertical-align: middle; }
+.icon svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+
+/* =========================================================
+   Top title bar (Win8 app slim title)
+   ========================================================= */
+.appbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--c-bg);
+    border-bottom: 1px solid var(--c-line-soft);
+}
+.appbar-inner {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 var(--pad-left);
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark {
+    width: 32px;
+    height: 32px;
+    display: block;
+    object-fit: cover;
+}
+.brand-name {
+    font-family: var(--ff-light);
+    font-size: 22px;
+    font-weight: 300;
+    letter-spacing: -0.3px;
+    line-height: 1;
+}
+.brand-colon { color: var(--accent); }
+
+.top-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--ff-regular);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 9px 16px;
+    background: transparent;
+    color: var(--c-ink);
+    border: 1px solid var(--c-line);
+    transition: background-color .12s linear, border-color .12s linear;
+}
+.top-action:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* =========================================================
+   Win8.1 Bottom App Bar - rectangular icon + label buttons
+   ========================================================= */
+.appbar-bottom {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 100;
+    background: var(--c-bg-alt);
+    border-top: 1px solid var(--c-line);
+}
+.appbar-bottom-inner {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 var(--pad-left);
+    height: var(--appbar-h);
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.appbar-bottom-inner::-webkit-scrollbar { display: none; }
+
+.nav-btn {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 18px 8px;
+    min-width: 76px;
+    color: var(--c-ink);
+    border-top: 3px solid transparent;
+    transition: background-color .12s linear, border-color .12s linear;
+}
+.nav-btn:hover { background: var(--c-bg-elev); }
+.nav-btn-icon {
+    color: var(--c-ink);
+    opacity: .82;
+    display: flex;
+    transition: color .12s linear, opacity .12s linear;
+}
+.nav-btn-label {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: .68;
+}
+.nav-btn.is-active { border-top-color: var(--accent); }
+.nav-btn.is-active .nav-btn-icon { color: var(--accent); opacity: 1; }
+.nav-btn.is-active .nav-btn-label { color: var(--accent); opacity: 1; }
+
+/* =========================================================
+   Generic tile
+   ========================================================= */
+.tile {
+    background: var(--accent);
+    color: #fff;
+    padding: var(--tile-pad);
+    position: relative;
+    overflow: hidden;
+    transition: transform .08s linear;
+}
+.tile-cyan      { background: var(--c-cyan); }
+.tile-cobalt    { background: var(--c-cobalt); }
+.tile-indigo    { background: var(--c-indigo); }
+.tile-violet    { background: var(--c-violet); }
+.tile-pink      { background: var(--c-pink); }
+.tile-magenta   { background: var(--c-magenta); }
+.tile-crimson   { background: var(--c-crimson); }
+.tile-red       { background: var(--c-red); }
+.tile-orange    { background: var(--c-orange); }
+.tile-amber     { background: var(--c-amber); }
+.tile-yellow     { background: var(--c-yellow); color: #1d1d1d; }
+.tile-lime      { background: var(--c-lime); color: #1d1d1d; }
+.tile-green     { background: var(--c-green); }
+.tile-emerald   { background: var(--c-emerald); }
+.tile-teal      { background: var(--c-teal); }
+.tile-steel     { background: var(--c-steel); }
+.tile-mauve     { background: var(--c-mauve); }
+.tile-dark      { background: var(--c-bg-elev); }
+.tile-black     { background: var(--c-bg-alt); }
+
+.tile:hover .tile-brand { width: 100%; }
+a.tile:active, .tile.is-link:active { transform: scale(.985); }
+
+/* Live-tile brand strip (slides in on hover) */
+.tile-brand {
+    position: absolute;
+    left: 0; bottom: 0;
+    height: 4px;
+    width: 0;
+    background: rgba(255,255,255,.85);
+    transition: width .16s linear;
+}
+.tile-yellow .tile-brand,
+.tile-lime .tile-brand,
+.tile-amber .tile-brand { background: rgba(0,0,0,.55); }
+
+/* Tile size variants (4-col grid) */
+.tile-wide  { grid-column: span 2; }
+.tile-tall  { grid-row: span 2; }
+.tile-large { grid-column: span 2; grid-row: span 2; }
+
+/* =========================================================
+   Live Tiles - Win8.1 / WP8.1 flip animation
+   Y-axis perspective flip; front holds ~4.5s, flips ~0.5s,
+   back holds ~4.5s, flips back ~0.5s (10s cycle). Stagger
+   via negative animation-delay so tiles flip independently.
+   ========================================================= */
+.tile-flip {
+    position: relative;
+    perspective: 1000px;
+}
+.tile-flip-inner {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+    -webkit-transform-style: preserve-3d;
+    animation: tileFlip 10s ease-in-out infinite;
+    will-change: transform;
+}
+.tile-flip:hover .tile-flip-inner { animation-play-state: paused; }
+
+.tile-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: var(--tile-pad);
+    overflow: hidden;
+}
+.tile-face-front { transform: rotateY(0deg); }
+.tile-face-back {
+    transform: rotateY(180deg);
+    background-color: #000;
+    background-size: cover;
+    background-position: center;
+}
+.tile-face-label {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: #000;
+    color: #fff;
+    padding: 8px 14px;
+    font-family: var(--ff-semilight);
+    font-size: 15px;
+    font-weight: 350;
+    letter-spacing: -0.2px;
+}
+
+@keyframes tileFlip {
+    0%, 45%   { transform: rotateY(0deg); }
+    50%, 95%  { transform: rotateY(180deg); }
+    100%      { transform: rotateY(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tile-flip-inner { animation: none; }
+}
+
+/* =========================================================
+   Hero (panorama)
+   ========================================================= */
+.hero {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: clamp(24px, 4vw, 48px) var(--pad-left) 0;
+}
+.hero-grid {
+    display: grid;
+    grid-template-columns: 2.2fr 1fr;
+    gap: var(--gap);
+}
+.hero-main {
+    background: var(--c-bg-alt);
+    padding: clamp(40px, 6vw, 88px) clamp(32px, 5vw, 80px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: clamp(360px, 54vw, 540px);
+    position: relative;
+    overflow: hidden;
+}
+.hero-eyebrow {
+    font-family: var(--ff-regular);
+    font-size: 12px;
+    letter-spacing: 3px;
+    font-weight: 400;
+    color: var(--accent);
+    margin-bottom: 28px;
+    text-transform: uppercase;
+}
+.hero-title {
+    font-family: var(--ff-light);
+    font-size: clamp(56px, 11vw, 128px);
+    font-weight: 300;
+    line-height: .92;
+    letter-spacing: -3px;
+    margin-bottom: 24px;
+}
+.accent-cyan { color: var(--accent); }
+.hero-sub {
+    font-family: var(--ff-semilight);
+    font-size: clamp(16px, 1.6vw, 20px);
+    font-weight: 350;
+    color: var(--c-ink-soft);
+    margin-bottom: 40px;
+    max-width: 620px;
+    line-height: 1.5;
+}
+.hero-cta { display: flex; gap: 8px; flex-wrap: wrap; }
+.tile-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 28px;
+    font-family: var(--ff-regular);
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    border: 2px solid transparent;
+    transition: background-color .12s linear, color .12s linear, border-color .12s linear;
+}
+.tile-btn-accent { background: var(--accent); color: #fff; }
+.tile-btn-accent:hover { background: #1593c7; }
+.tile-btn-outline {
+    background: transparent;
+    color: var(--c-ink);
+    border-color: var(--c-line);
+}
+.tile-btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+.hero-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: var(--gap);
+}
+.hero-stat {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 150px;
+}
+.stat-num {
+    font-family: var(--ff-light);
+    font-size: clamp(40px, 5vw, 68px);
+    font-weight: 300;
+    line-height: 1;
+}
+.stat-label {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 10px;
+    opacity: .9;
+}
+
+.hero-strip {
+    margin-top: var(--gap);
+    display: flex;
+    flex-wrap: wrap;
+    background: var(--c-bg-alt);
+}
+.strip-item {
+    padding: 12px 20px;
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-right: 1px solid var(--c-line);
+    color: var(--c-ink-soft);
+}
+.strip-item.strip-alt { background: var(--accent); color: #fff; }
+
+/* =========================================================
+   Section layout - panorama headers, 120px left bleed
+   ========================================================= */
+.section {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: var(--pad-y) var(--pad-left);
+}
+.section-alt-bg { background: var(--c-bg-alt); max-width: none; }
+.section-accent-bg { background: var(--accent); color: #fff; max-width: none; }
+.section-dark-bg { background: var(--c-bg-alt); max-width: none; }
+.section-alt-bg > *,
+.section-accent-bg > *,
+.section-dark-bg > * {
+    max-width: var(--maxw);
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.section-head { margin-bottom: 44px; }
+.section-kicker {
+    display: inline-block;
+    font-family: var(--ff-regular);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+}
+.section-accent-bg .section-kicker { color: #fff; opacity: .9; }
+.section-title {
+    /* Win8.1 ramp: "subheader" 34px -> "header" 46px, Segoe UI Light */
+    font-family: var(--ff-light);
+    font-size: clamp(34px, 5vw, 46px);
+    font-weight: 300;
+    letter-spacing: -0.8px;
+    line-height: 1.05;
+}
+.section-desc {
+    margin-top: 18px;
+    font-family: var(--ff-semilight);
+    font-size: clamp(15px, 1.4vw, 17px);
+    font-weight: 350;
+    color: var(--c-ink-soft);
+    max-width: 640px;
+}
+.section-accent-bg .section-desc { color: rgba(255,255,255,.92); }
+
+/* =========================================================
+   Tile grids
+   ========================================================= */
+.tile-grid {
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 168px;
+    grid-auto-flow: dense;
+}
+.tile-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 190px;
+}
+
+/* Feature / tech / special tiles share content layout */
+.feature, .tech, .special, .download, .platform {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+.tile-icon {
+    color: currentColor;
+    margin-bottom: auto;
+    opacity: .92;
+}
+
+.feature-title, .tech-name, .special-title, .download-name, .platform-name {
+    font-family: var(--ff-semilight);
+    font-size: clamp(16px, 1.6vw, 21px);
+    font-weight: 350;
+    margin-bottom: 5px;
+    letter-spacing: -0.2px;
+}
+.tile-large .feature-title,
+.tile-large .platform-name,
+.tile-large .download-name { font-size: clamp(20px, 2.4vw, 28px); }
+.feature-desc, .tech-desc, .special-desc, .download-desc, .platform-desc {
+    font-family: var(--ff-regular);
+    font-size: 13px;
+    font-weight: 400;
+    opacity: .9;
+}
+
+/* Plain text tag (replaces pill - Metro uses plain labels) */
+.tile-label {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: .85;
+    margin-bottom: 12px;
+}
+.special-num {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    opacity: .8;
+}
+
+.platform-glyph {
+    margin-bottom: auto;
+    color: currentColor;
+    opacity: .92;
+}
+
+/* =========================================================
+   Screenshots
+   ========================================================= */
+.subsection-title {
+    font-family: var(--ff-light);
+    font-size: 20px;
+    font-weight: 300;
+    letter-spacing: -0.3px;
+    margin: 0 0 16px;
+    padding-left: 12px;
+    border-left: 4px solid var(--accent);
+}
+.subsection-title:nth-of-type(2) { margin-top: 44px; }
+.shot-grid {
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 210px;
+}
+.shot-grid-phone {
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: auto;
+    max-width: 760px;
+}
+.tile-shot {
+    background: var(--c-bg-alt);
+    padding: 0;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+}
+.shot-grid-phone .tile-shot { aspect-ratio: 9 / 16; }
+.tile-shot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform .25s ease;
+}
+.tile-shot:hover img { transform: scale(1.04); }
+
+/* =========================================================
+   Footer
+   ========================================================= */
+.footer {
+    background: var(--c-bg-alt);
+    color: var(--c-ink);
+    padding: clamp(48px, 6vw, 80px) var(--pad-left) 0;
+}
+.footer-grid {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1.6fr;
+    gap: 40px;
+    padding-bottom: 48px;
+}
+.footer-brand .brand-name {
+    font-family: var(--ff-light);
+    font-size: 28px;
+    font-weight: 300;
+    margin-bottom: 12px;
+}
+.footer-tag {
+    font-family: var(--ff-semilight);
+    font-size: 13px;
+    color: var(--c-ink-mute);
+    font-weight: 350;
+}
+.footer-head {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+}
+.footer-list li {
+    font-family: var(--ff-regular);
+    font-size: 14px;
+    font-weight: 400;
+    padding: 6px 0;
+    color: var(--c-ink-soft);
+}
+.footer-list a:hover { color: var(--accent); }
+.footer-ai {
+    font-family: var(--ff-regular);
+    font-size: 13px;
+    color: var(--c-ink-soft);
+    line-height: 1.6;
+}
+.footer-strip {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    border-top: 1px solid var(--c-line);
+    padding: 20px 0;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-family: var(--ff-regular);
+    font-size: 12px;
+    color: var(--c-ink-mute);
+    letter-spacing: 1px;
+}
+
+/* =========================================================
+   Docs layout
+   ========================================================= */
+.docs-shell {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 32px var(--pad-left) 96px;
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 48px;
+    align-items: start;
+}
+.docs-side {
+    position: sticky;
+    top: 80px;
+    border-left: 4px solid var(--c-line);
+    padding-left: 16px;
+}
+.docs-side-head {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+}
+.docs-side a {
+    display: block;
+    padding: 8px 12px;
+    font-family: var(--ff-regular);
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--c-ink-soft);
+    border-left: 4px solid transparent;
+    margin-left: -20px;
+    padding-left: 16px;
+    transition: background-color .12s linear, border-color .12s linear, color .12s linear;
+}
+.docs-side a:hover { background: var(--c-bg-elev); color: var(--c-ink); }
+.docs-side a.is-active {
+    border-left-color: var(--accent);
+    color: var(--accent);
+}
+.docs-side-group { margin-bottom: 20px; }
+.docs-side-group-title {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--c-ink-mute);
+    margin: 0 0 6px 12px;
+}
+
+.docs-main { min-width: 0; }
+.docs-header {
+    border-bottom: 2px solid var(--c-ink);
+    padding-bottom: 20px;
+    margin-bottom: 36px;
+}
+.docs-eyebrow {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+}
+.docs-h1 {
+    font-family: var(--ff-light);
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 300;
+    letter-spacing: -1px;
+    line-height: 1.05;
+}
+.docs-lead {
+    margin-top: 16px;
+    font-family: var(--ff-semilight);
+    font-size: 17px;
+    font-weight: 350;
+    color: var(--c-ink-soft);
+    max-width: 720px;
+}
+
+/* Docs prose (Metro-flat) */
+.prose {
+    font-family: var(--ff-regular);
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--c-ink);
+    max-width: 760px;
+}
+.prose h2 {
+    font-family: var(--ff-light);
+    font-size: 30px;
+    font-weight: 300;
+    margin: 44px 0 14px;
+    letter-spacing: -0.5px;
+}
+.prose h3 {
+    font-family: var(--ff-semilight);
+    font-size: 19px;
+    font-weight: 350;
+    margin: 28px 0 8px;
+}
+.prose h4 {
+    font-family: var(--ff-regular);
+    font-size: 13px;
+    font-weight: 400;
+    margin: 20px 0 6px;
+    color: var(--c-ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+.prose p { margin: 12px 0; color: var(--c-ink-soft); }
+.prose ul, .prose ol { margin: 12px 0; padding-left: 24px; }
+.prose ul { list-style: none; padding-left: 0; }
+.prose ul li {
+    position: relative;
+    padding-left: 22px;
+    margin: 6px 0;
+    color: var(--c-ink-soft);
+}
+.prose ul li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 10px;
+    width: 8px; height: 8px;
+    background: var(--accent);
+}
+.prose ol { list-style: decimal; }
+.prose ol li { margin: 6px 0; color: var(--c-ink-soft); }
+.prose a {
+    color: var(--accent);
+    border-bottom: 2px solid var(--accent);
+}
+.prose a:hover { background: var(--accent); color: #fff; }
+.prose strong { font-weight: 600; color: var(--c-ink); }
+.prose code {
+    font-family: var(--ff-mono);
+    font-size: 13px;
+    background: var(--c-bg-elev);
+    padding: 2px 6px;
+    color: var(--c-cyan);
+    border: 1px solid var(--c-line);
+}
+.prose pre {
+    font-family: var(--ff-mono);
+    font-size: 13px;
+    background: var(--c-bg-alt);
+    color: #e8e8e8;
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 16px 0;
+    border-left: 4px solid var(--accent);
+    line-height: 1.5;
+}
+.prose pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    border: 0;
+}
+.prose blockquote {
+    border-left: 4px solid var(--c-amber);
+    background: var(--c-bg-elev);
+    padding: 14px 20px;
+    margin: 16px 0;
+    color: var(--c-ink-soft);
+}
+.prose table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+}
+.prose th, .prose td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--c-line);
+}
+.prose th {
+    background: var(--c-bg-alt);
+    color: var(--c-ink);
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 11px;
+}
+.prose tr:nth-child(even) td { background: var(--c-bg-elev); }
+.prose hr {
+    border: 0;
+    border-top: 2px solid var(--c-line);
+    margin: 32px 0;
+}
+.prose img { margin: 16px 0; border: 1px solid var(--c-line); }
+.prose kbd {
+    font-family: var(--ff-mono);
+    font-size: 12px;
+    background: var(--c-bg-elev);
+    color: var(--c-ink);
+    padding: 2px 7px;
+    border: 1px solid var(--c-line);
+}
+
+.docs-pager {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--gap);
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 2px solid var(--c-line);
+}
+.docs-pager a {
+    padding: 20px 24px;
+    background: var(--c-bg-elev);
+    border-left: 4px solid var(--accent);
+    transition: background-color .12s linear, color .12s linear;
+}
+.docs-pager a:hover { background: var(--accent); color: #fff; }
+.docs-pager .pager-next { text-align: right; border-left: 0; border-right: 4px solid var(--accent); }
+.docs-pager .pager-label {
+    font-family: var(--ff-regular);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: .7;
+}
+.docs-pager .pager-title {
+    font-family: var(--ff-semilight);
+    font-size: 16px;
+    font-weight: 350;
+    margin-top: 4px;
+}
+
+.docs-cta { max-width: var(--maxw); margin: 0 auto; }
+
+/* =========================================================
+   Responsive
+   ========================================================= */
+@media (max-width: 1024px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-side { grid-template-columns: repeat(4, 1fr); grid-template-rows: 1fr; }
+    .tile-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 150px; }
+    .tile-grid-3 { grid-template-columns: repeat(2, 1fr); }
+    .tile-large { grid-column: span 2; grid-row: span 2; }
+    .tile-wide { grid-column: span 2; }
+    .tile-tall { grid-row: span 2; grid-column: span 1; }
+    .shot-grid { grid-template-columns: repeat(3, 1fr); }
+    .footer-grid { grid-template-columns: 1fr 1fr; }
+    .docs-shell { grid-template-columns: 1fr; }
+    .docs-side {
+        position: static;
+        border-left: 0;
+        border-top: 4px solid var(--c-line);
+        padding-left: 0;
+        padding-top: 16px;
+    }
+    .docs-side a { margin-left: 0; padding-left: 12px; }
+}
+
+@media (max-width: 720px) {
+    :root { --appbar-h: 64px; --pad-left: 20px; }
+    .section { padding: 56px 20px; }
+    .hero { padding: 16px 20px 0; }
+    .appbar-inner { padding: 0 20px; }
+    .appbar-bottom-inner { padding: 0 8px; gap: 0; }
+    .nav-btn { min-width: 60px; padding: 8px 10px 6px; }
+    .nav-btn-label { font-size: 9px; letter-spacing: .5px; }
+
+    .hero-side { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .tile-grid, .tile-grid-3 { grid-template-columns: 1fr; grid-auto-rows: auto; }
+    .tile-grid > *, .tile-grid-3 > * {
+        grid-column: span 1 !important;
+        grid-row: span 1 !important;
+        min-height: 140px;
+    }
+    .shot-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 150px; }
+    .footer-grid { grid-template-columns: 1fr; gap: 32px; }
+    .footer { padding-left: 20px; }
+    .footer-strip { flex-direction: column; gap: 6px; }
+    .docs-pager { grid-template-columns: 1fr; }
+    .docs-shell { padding: 24px 20px 96px; }
+}
+
+@media (max-width: 420px) {
+    .shot-grid { grid-template-columns: 1fr; }
+    .hero-strip { flex-direction: column; }
+    .strip-item { border-right: 0; border-bottom: 1px solid var(--c-line); }
+}
+
+/* =========================================================
+   IE10 / IE11 fallbacks
+   IE ignores: CSS custom properties (var()), standard grid,
+   clamp(), aspect-ratio, inset, position:sticky, flex gap,
+   preserve-3d. It also cannot run the Astro-bundled module
+   script (handled via is:inline ES5 above). This block
+   restores a legible, dark, stacked layout for IE. It is
+   not pixel-perfect Metro - 3D tile flip is disabled and
+   grids degrade to wrapping flex.
+   ========================================================= */
+.ie body {
+    background: #1d1d1d;
+    color: #ffffff;
+    font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, "Microsoft YaHei UI", sans-serif;
+    padding-bottom: 76px;
+}
+
+/* Type ramp without clamp() */
+.ie .hero-title { font-family: "Segoe UI Light", "Segoe UI", sans-serif; font-size: 72px; font-weight: 300; line-height: 1; letter-spacing: -2px; }
+.ie .section-title { font-family: "Segoe UI Light", "Segoe UI", sans-serif; font-size: 36px; font-weight: 300; letter-spacing: -0.5px; }
+.ie .docs-h1 { font-family: "Segoe UI Light", "Segoe UI", sans-serif; font-size: 40px; font-weight: 300; }
+.ie .stat-num { font-family: "Segoe UI Light", "Segoe UI", sans-serif; font-size: 48px; font-weight: 300; }
+.ie .brand-name { font-family: "Segoe UI Light", "Segoe UI", sans-serif; }
+
+/* Surfaces (var() fallbacks) */
+.ie .appbar { position: relative; background: #1d1d1d; border-bottom: 1px solid #2a2a2a; }
+.ie .appbar-bottom { background: #000000; border-top: 1px solid #3a3a3a; }
+.ie .section-alt-bg,
+.ie .section-dark-bg { background: #000000; }
+.ie .section-accent-bg { background: #1ba1e2; color: #ffffff; }
+.ie .footer { background: #000000; }
+.ie .hero-main { background: #000000; }
+.ie .hero-strip { background: #000000; }
+.ie .strip-item { color: #b8b8b8; border-right-color: #3a3a3a; }
+.ie .strip-item.strip-alt { background: #1ba1e2; color: #ffffff; }
+.ie .hero-eyebrow,
+.ie .section-kicker,
+.ie .docs-eyebrow,
+.ie .docs-side-head,
+.ie .footer-head { color: #1ba1e2; }
+.ie .hero-sub,
+.ie .section-desc,
+.ie .docs-lead,
+.ie .footer-tag,
+.ie .footer-ai,
+.ie .footer-strip { color: #b8b8b8; }
+.ie .docs-side { border-left-color: #3a3a3a; }
+.ie .docs-side a { color: #b8b8b8; }
+.ie .docs-side a.is-active { color: #1ba1e2; border-left-color: #1ba1e2; }
+.ie .docs-header { border-bottom-color: #ffffff; }
+.ie .docs-pager { border-top-color: #3a3a3a; }
+.ie .docs-pager a { background: #262626; border-left-color: #1ba1e2; }
+.ie .footer-list li { color: #b8b8b8; }
+.ie .footer-strip { border-top-color: #3a3a3a; }
+.ie .brand-colon { color: #1ba1e2; }
+.ie .top-action { color: #ffffff; border: 1px solid #3a3a3a; }
+.ie .top-action:hover { background: #1ba1e2; border-color: #1ba1e2; }
+
+/* Tile colors hardcoded (var() would make tiles invisible in IE) */
+.ie .tile { background: #1ba1e2; color: #ffffff; }
+.ie .tile-cyan      { background: #1ba1e2; }
+.ie .tile-magenta   { background: #d80073; }
+.ie .tile-emerald   { background: #008a00; }
+.ie .tile-amber     { background: #f0a30a; color: #1d1d1d; }
+.ie .tile-violet    { background: #aa00ff; }
+.ie .tile-teal      { background: #00aba9; }
+.ie .tile-dark      { background: #262626; }
+.ie .tile-black     { background: #000000; }
+.ie .tile-face-label { background: #000000; color: #ffffff; }
+
+/* Live tile flip is unsupported (preserve-3d / backface) -> static front */
+.ie .tile-flip { perspective: none; }
+.ie .tile-flip-inner { position: static; animation: none; transform: none; }
+.ie .tile-face { position: static; transform: none; backface-visibility: visible; padding: 22px; }
+.ie .tile-face-back { display: none; }
+
+/* Grids -> wrapping flex (IE has no standard grid; flexbox is supported) */
+.ie .tile-grid,
+.ie .tile-grid-3 {
+    display: flex;
+    flex-flow: row wrap;
+    margin: -4px;
+}
+.ie .tile-grid > *,
+.ie .tile-grid-3 > * {
+    width: 24%;
+    margin: 4px 0 4px 0;
+    padding: 4px;
+    box-sizing: border-box;
+    min-height: 160px;
+}
+.ie .tile-grid > * { width: 24%; }
+.ie .tile-grid > .tile-wide,
+.ie .tile-grid > .tile-large { width: 49%; }
+.ie .tile-grid > .tile-tall { width: 24%; min-height: 320px; }
+.ie .tile-grid-3 > * { width: 32%; }
+
+.ie .hero-grid { display: flex; flex-flow: row wrap; }
+.ie .hero-main { width: 66%; }
+.ie .hero-side { width: 33%; display: flex; flex-flow: row wrap; }
+.ie .hero-side .hero-stat { width: 50%; min-height: 150px; }
+.ie .hero-side .hero-stat,
+.ie .hero-main { margin-bottom: 8px; }
+
+.ie .footer-grid { display: flex; flex-flow: row wrap; }
+.ie .footer-grid > * { width: 23%; margin-right: 2%; }
+
+.ie .shot-grid { display: flex; flex-flow: row wrap; }
+.ie .shot-grid > * { width: 24%; height: 200px; margin-bottom: 8px; }
+.ie .shot-grid-phone > * { height: auto; }
+
+.ie .docs-shell { display: block; }
+.ie .docs-side { position: static; margin-bottom: 24px; }
+.ie .docs-pager { display: flex; }
+.ie .docs-pager > * { width: 49%; margin-right: 2%; }
+
+/* aspect-ratio unsupported -> rely on fixed heights above */
+.ie .tile-shot { height: 200px; }
+
+/* Bottom app bar: ensure horizontal scroll on IE */
+.ie .appbar-bottom-inner { display: flex; overflow-x: auto; -ms-overflow-style: -ms-autohiding-scrollbar; }
+
+/* Docs prose colors (var() fallback) */
+.ie .prose { color: #ffffff; }
+.ie .prose h2,
+.ie .prose h3,
+.ie .prose strong { color: #ffffff; }
+.ie .prose p,
+.ie .prose li { color: #b8b8b8; }
+.ie .prose a { color: #1ba1e2; }
+.ie .prose code { background: #262626; color: #1ba1e2; border: 1px solid #3a3a3a; }
+.ie .prose pre { background: #000000; color: #e8e8e8; border-left-color: #1ba1e2; }
+.ie .prose blockquote { background: #262626; border-left-color: #f0a30a; color: #b8b8b8; }
+.ie .prose th { background: #000000; color: #ffffff; }
+.ie .prose tr:nth-child(even) td { background: #262626; }
+.ie .prose td,
+.ie .prose th { border-bottom-color: #3a3a3a; }
+.ie .prose hr { border-top-color: #3a3a3a; }
+

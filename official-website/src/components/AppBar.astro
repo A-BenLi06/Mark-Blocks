@@ -1,0 +1,22 @@
+---
+import Icon from "./Icon.astro";
+// Minimal Win8-style top title bar: brand + single action.
+---
+
+<header class="appbar" id="appbar">
+  <div class="appbar-inner">
+    <a href="/" class="brand">
+      <img src="/favicon.png" alt="Mark::Blocks" class="brand-mark" width="32" height="32" />
+      <span class="brand-name">Mark<span class="brand-colon">::</span>Blocks</span>
+    </a>
+    <a
+      href="https://github.com/A-BenLi06/MetroMarkdownEditor"
+      target="_blank"
+      rel="noopener"
+      class="top-action"
+    >
+      <Icon name="github" size={16} />
+      <span>GitHub</span>
+    </a>
+  </div>
+</header>

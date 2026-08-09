@@ -1,0 +1,32 @@
+---
+import Icon from "./Icon.astro";
+// Win8.1 bottom App Bar - rectangular icon + label buttons.
+const items = [
+  { href: "/",          label: "首页",   icon: "home",      match: "home" },
+  { href: "#features",  label: "功能",   icon: "grid" },
+  { href: "#special",   label: "特色",   icon: "star" },
+  { href: "#tech",      label: "技术",   icon: "code" },
+  { href: "#platforms", label: "平台",   icon: "device" },
+  { href: "/docs/",     label: "文档",   icon: "list",      match: "docs" },
+  { href: "#download",  label: "下载",   icon: "download" },
+];
+---
+
+<div class="appbar-bottom" id="appbarBottom">
+  <div class="appbar-bottom-inner">
+    {
+      items.map((it) => (
+        <a
+          href={it.href}
+          class="nav-btn"
+          data-nav
+          data-match={it.match || ""}
+          aria-label={it.label}
+        >
+          <span class="nav-btn-icon"><Icon name={it.icon} size={24} /></span>
+          <span class="nav-btn-label">{it.label}</span>
+        </a>
+      ))
+    }
+  </div>
+</div>

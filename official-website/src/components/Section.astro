@@ -1,0 +1,27 @@
+---
+interface Props {
+  id?: string;
+  title?: string;
+  en?: string;
+  desc?: string;
+  alt?: boolean;
+  accent?: boolean;
+  dark?: boolean;
+  class?: string;
+}
+const { id, title, en, desc, alt = false, accent = false, dark = false, class: cls = "" } = Astro.props;
+const bg = accent ? "section-accent-bg" : dark ? "section-dark-bg" : alt ? "section-alt-bg" : "";
+---
+
+<section id={id} class={`section ${bg} ${cls}`}>
+  {
+    title && (
+      <div class="section-head">
+        {en && <span class="section-kicker">{en}</span>}
+        <h2 class="section-title">{title}</h2>
+        {desc && <p class="section-desc">{desc}</p>}
+      </div>
+    )
+  }
+  <slot />
+</section>
