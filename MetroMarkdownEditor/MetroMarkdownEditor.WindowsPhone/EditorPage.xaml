@@ -144,6 +144,12 @@
                     </AppBarButton.Icon>
                 </AppBarButton>
 
+                <AppBarButton Label="Outline" Click="OutlineButton_Click">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="List" />
+                    </AppBarButton.Icon>
+                </AppBarButton>
+
                 <AppBarButton Label="Export to Markdown" Tag="md" Click="ExportButton_Click" />
                 <AppBarButton Label="Export to HTML" Tag="html" Click="ExportButton_Click" />
             </CommandBar.SecondaryCommands>

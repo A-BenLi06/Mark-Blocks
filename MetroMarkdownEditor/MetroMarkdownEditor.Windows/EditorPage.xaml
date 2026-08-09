@@ -144,6 +144,12 @@
                         <SymbolIcon Symbol="Find"/>
                     </AppBarButton.Icon>
                 </AppBarButton>
+
+                <AppBarButton Label="Outline" Click="OutlineButton_Click">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="List"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
             </CommandBar.PrimaryCommands>
 
             <CommandBar.SecondaryCommands>

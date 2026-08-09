@@ -12,6 +12,7 @@ using Windows.UI;
 using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Markup;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
 using Windows.Phone.UI.Input;
@@ -41,6 +42,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private bool _isImmersiveMode;
         private EditorViewMode _currentViewMode = EditorViewMode.Write;
         private ElementTheme _lastTheme = ElementTheme.Light;
+        private PreviewThemeType _lastPreviewTheme = PreviewThemeType.Grey;
         private INotifyPropertyChanged _themeViewModel;
 
         // 搜索功能状态变量
@@ -48,6 +50,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private string _lastSearchText = string.Empty;
         private int _lastHighlightStart = -1;
         private int _lastHighlightLength = 0;
+        private Windows.UI.Xaml.Controls.Primitives.Popup _outlinePopup;
 
         #endregion
 
@@ -805,6 +808,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (ViewModel == null) return;
 
             var theme = GetCurrentTheme();
+            var previewTheme = ThemeSvc != null ? ThemeSvc.PreviewTheme : PreviewThemeType.Grey;
             ViewModel.SetTheme(theme);
 
             // Determine which WebView to use
@@ -816,12 +820,13 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             if (targetWebView == null) return;
 
-            if (!_skeletonLoaded || theme != _lastTheme)
+            if (!_skeletonLoaded || theme != _lastTheme || previewTheme != _lastPreviewTheme)
             {
                 _isWebViewReady = false;
                 await _renderService.LoadSkeletonAsync(targetWebView, BuildPhoneCss(), theme);
                 _skeletonLoaded = true;
                 _lastTheme = theme;
+                _lastPreviewTheme = previewTheme;
             }
 
             if (!_isWebViewReady)
@@ -860,13 +865,25 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private string BuildPhoneCss()
         {
+            var isDark = GetCurrentTheme() == ElementTheme.Dark;
+            var background = ThemeSvc != null
+                ? ThemeSvc.GetPreviewBackground()
+                : (isDark ? "#1d1d1d" : "#ffffff");
+            var foreground = isDark ? "#f3f3f3" : "#1a1a1a";
+
             return @"<style>
+                html, body {
+                    background-color: " + background + @";
+                    min-height: 100%;
+                }
                 body {
                     font-family: 'Segoe UI', sans-serif;
                     font-size: 16px;
                     line-height: 1.6;
                     padding: 12px 16px;
                     margin: 0;
+                    color: " + foreground + @";
+                    background-color: " + background + @";
                     word-wrap: break-word;
                     overflow-x: hidden;
                 }
@@ -968,6 +985,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             var _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
             {
+                _skeletonLoaded = false;
                 HighlightMarkdownSyntax();
                 var __ = RenderPreviewAsync();
             });
@@ -1009,6 +1027,232 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             FlushPendingEditorText(refreshPreview: false);
             await ViewModel.ExportAsync(format);
+        }
+
+        #endregion
+
+        #region Outline
+
+        private void OutlineButton_Click(object sender, RoutedEventArgs e)
+        {
+            ShowOutlinePopup();
+        }
+
+        private void ShowOutlinePopup()
+        {
+            FlushPendingEditorText(refreshPreview: true);
+
+            if (_outlinePopup != null && _outlinePopup.IsOpen)
+            {
+                _outlinePopup.IsOpen = false;
+                return;
+            }
+
+            var items = ViewModel != null ? ViewModel.OutlineItems : null;
+            var bounds = Window.Current.Bounds;
+            var panel = new Grid
+            {
+                Width = bounds.Width,
+                MaxHeight = Math.Max(260, bounds.Height * 0.72),
+                Background = (SolidColorBrush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"]
+            };
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var header = new Grid { Margin = new Thickness(16, 14, 10, 8) };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var title = new TextBlock
+            {
+                Text = "Outline",
+                FontSize = 24,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(title, 0);
+
+            var close = new Button
+            {
+                Content = "x",
+                Width = 40,
+                Height = 40,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0)
+            };
+            close.Click += (s, args) =>
+            {
+                if (_outlinePopup != null)
+                {
+                    _outlinePopup.IsOpen = false;
+                }
+            };
+            Grid.SetColumn(close, 1);
+
+            header.Children.Add(title);
+            header.Children.Add(close);
+            Grid.SetRow(header, 0);
+            panel.Children.Add(header);
+
+            if (items == null || items.Count == 0)
+            {
+                var empty = new TextBlock
+                {
+                    Text = "No headings",
+                    FontSize = 17,
+                    Opacity = 0.7,
+                    Margin = new Thickness(16, 24, 16, 24)
+                };
+                Grid.SetRow(empty, 1);
+                panel.Children.Add(empty);
+            }
+            else
+            {
+                var list = new ListView
+                {
+                    ItemsSource = items,
+                    IsItemClickEnabled = true,
+                    SelectionMode = ListViewSelectionMode.None,
+                    Margin = new Thickness(4, 0, 4, 10),
+                    ItemTemplate = BuildOutlineItemTemplate()
+                };
+                list.ItemClick += OutlineList_ItemClick;
+                Grid.SetRow(list, 1);
+                panel.Children.Add(list);
+            }
+
+            _outlinePopup = new Windows.UI.Xaml.Controls.Primitives.Popup
+            {
+                Child = new Border
+                {
+                    Child = panel,
+                    BorderBrush = new SolidColorBrush(Colors.Gray),
+                    BorderThickness = new Thickness(1, 1, 1, 0)
+                },
+                IsLightDismissEnabled = true
+            };
+            _outlinePopup.HorizontalOffset = 0;
+            _outlinePopup.VerticalOffset = Math.Max(0, bounds.Height - panel.MaxHeight - 72);
+            _outlinePopup.IsOpen = true;
+        }
+
+        private static DataTemplate BuildOutlineItemTemplate()
+        {
+            const string template =
+                "<DataTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">" +
+                "<Grid Padding=\"{Binding Indent}\" MinHeight=\"44\">" +
+                "<TextBlock Text=\"{Binding Title}\" FontSize=\"17\" TextTrimming=\"CharacterEllipsis\" VerticalAlignment=\"Center\"/>" +
+                "</Grid>" +
+                "</DataTemplate>";
+            return (DataTemplate)XamlReader.Load(template);
+        }
+
+        private async void OutlineList_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var item = e.ClickedItem as MarkdownOutlineItem;
+            if (item == null)
+            {
+                return;
+            }
+
+            if (_outlinePopup != null)
+            {
+                _outlinePopup.IsOpen = false;
+            }
+
+            await NavigateToOutlineItemAsync(item);
+        }
+
+        private async Task NavigateToOutlineItemAsync(MarkdownOutlineItem item)
+        {
+            FlushPendingEditorText(refreshPreview: true);
+
+            if (item == null)
+            {
+                return;
+            }
+
+            if (_currentViewMode == EditorViewMode.Write)
+            {
+                NavigateEditorToLine(item.Line);
+                return;
+            }
+
+            await RenderPreviewAsync();
+            await NavigatePreviewToOutlineItemAsync(item);
+        }
+
+        private void NavigateEditorToLine(int line)
+        {
+            if (EditorBox == null || EditorBox.Document == null)
+            {
+                return;
+            }
+
+            var text = GetNormalizedEditorText();
+            var position = GetLineStartPosition(text, line);
+            try
+            {
+                EditorBox.Focus(FocusState.Programmatic);
+                var range = EditorBox.Document.GetRange(position, position);
+                EditorBox.Document.Selection.SetRange(position, position);
+                range.ScrollIntoView(PointOptions.Start);
+            }
+            catch
+            {
+            }
+        }
+
+        private static int GetLineStartPosition(string text, int line)
+        {
+            if (line <= 0 || string.IsNullOrEmpty(text))
+            {
+                return 0;
+            }
+
+            int position = 0;
+            int currentLine = 0;
+            while (position < text.Length && currentLine < line)
+            {
+                if (text[position] == '\n')
+                {
+                    currentLine++;
+                }
+                position++;
+            }
+
+            return Math.Min(position, text.Length);
+        }
+
+        private async Task NavigatePreviewToOutlineItemAsync(MarkdownOutlineItem item)
+        {
+            if (PreviewWebView == null || !_isWebViewReady || item == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var escaped = EscapeJavaScriptString(item.AnchorId);
+                var block = item.BlockIndex.ToString();
+                var script = "var el=document.querySelector('[data-block=\"" + block + "\"]');" +
+                             "if(!el){ el=document.getElementById('" + escaped + "'); }" +
+                             "if(el){ el.scrollIntoView(true); 'ok'; } else { 'missing'; }";
+                await PreviewWebView.InvokeScriptAsync("eval", new[] { script });
+            }
+            catch
+            {
+            }
+        }
+
+        private static string EscapeJavaScriptString(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("'", "\\'")
+                .Replace("\r", "")
+                .Replace("\n", "");
         }
 
         #endregion

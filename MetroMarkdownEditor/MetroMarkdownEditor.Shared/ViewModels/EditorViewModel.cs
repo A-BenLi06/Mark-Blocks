@@ -31,6 +31,7 @@ namespace MetroMarkdownEditor.ViewModels
         private string _previewContent;
         private string _previewCss;
         private IReadOnlyList<MarkdownBlock> _previewBlocks = new List<MarkdownBlock>();
+        private IReadOnlyList<MarkdownOutlineItem> _outlineItems = new List<MarkdownOutlineItem>();
         private bool _isSaving;
         private string _saveStatusText;
         private string _exportContent; // For WP8.1 continuation
@@ -143,6 +144,19 @@ namespace MetroMarkdownEditor.ViewModels
                 if (!ReferenceEquals(_previewBlocks, value))
                 {
                     _previewBlocks = value ?? new List<MarkdownBlock>();
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        public IReadOnlyList<MarkdownOutlineItem> OutlineItems
+        {
+            get { return _outlineItems; }
+            private set
+            {
+                if (!ReferenceEquals(_outlineItems, value))
+                {
+                    _outlineItems = value ?? new List<MarkdownOutlineItem>();
                     RaisePropertyChanged();
                 }
             }
@@ -433,6 +447,7 @@ namespace MetroMarkdownEditor.ViewModels
             PreviewCss = _themeService.BuildCss();
             var rendered = _renderService.RenderMarkdown(markdown);
             PreviewBlocks = rendered.Blocks;
+            OutlineItems = rendered.Outline;
             PreviewContent = NormalizeImageSourcesInHtml(rendered.Html);
         }
 
