@@ -42,6 +42,24 @@ namespace MetroMarkdownEditor.Windows
                 _backgroundService.BackgroundMode = MainPageBackgroundMode.Custom;
             }
         }
+
+        private void ResetZoom_Click(object sender, RoutedEventArgs e)
+        {
+            var theme = DataContext as ThemeService;
+            if (theme != null)
+            {
+                theme.ResetZoom();
+            }
+        }
+
+        private void ResetReadingSpeed_Click(object sender, RoutedEventArgs e)
+        {
+            var theme = DataContext as ThemeService;
+            if (theme != null)
+            {
+                theme.ResetReadingSpeed();
+            }
+        }
     }
 }
 

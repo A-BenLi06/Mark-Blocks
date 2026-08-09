@@ -86,7 +86,11 @@ namespace MetroMarkdownEditor
         {
             // 我为你生成了一个随机的 GUID：28a24559-0017-4959-9b93-669e20032908
             // 使用 GUID 字符串作为 ID 可以解决这个 FormatException
-            args.Request.ApplicationCommands.Add(new SettingsCommand("28a24559-0017-4959-9b93-669e20032908", "Personalization", _ => ShowThemeSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("28a24559-0017-4959-9b93-669e20032908", "Appearance", _ => ShowThemeSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("0f0593fa-4f39-4f38-8e43-71c81c909f7a", "Markdown", _ => ShowMarkdownSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("276ed2b5-589f-4cb7-ae60-09de6b11f873", "Editor", _ => ShowEditorSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("3ed00ab2-1555-49bd-8a0c-3de3f10fbfa7", "Image", _ => ShowImageSettings()));
+            args.Request.ApplicationCommands.Add(new SettingsCommand("2042f0e8-25df-4e31-846f-72a76b4b01c9", "Export", _ => ShowExportSettings()));
             args.Request.ApplicationCommands.Add(new SettingsCommand("c5f5e4f5-71d8-4a0c-bd27-3f58b6c6fbc0", "Auto Save", _ => ShowAutoSaveSettings()));
             args.Request.ApplicationCommands.Add(new SettingsCommand("a1b2c3d4-5e6f-7a8b-9c0d-e1f2a3b4c5d6", "Dev", _ => ShowDevSettings()));
         }
@@ -110,6 +114,30 @@ namespace MetroMarkdownEditor
             flyout.Show();
         }
 
+        private void ShowMarkdownSettings()
+        {
+            var flyout = new MarkdownSettings();
+            flyout.Show();
+        }
+
+        private void ShowEditorSettings()
+        {
+            var flyout = new EditorSettings();
+            flyout.Show();
+        }
+
+        private void ShowImageSettings()
+        {
+            var flyout = new ImageSettings();
+            flyout.Show();
+        }
+
+        private void ShowExportSettings()
+        {
+            var flyout = new ExportSettings();
+            flyout.Show();
+        }
+
         private void ShowDevSettings()
         {
             var flyout = new DevSettings();
@@ -117,10 +145,32 @@ namespace MetroMarkdownEditor
         }
 #endif
 
-        private void OnSuspending(object sender, SuspendingEventArgs e)
+        private async void OnSuspending(object sender, SuspendingEventArgs e)
         {
             var deferral = e.SuspendingOperation.GetDeferral();
-            deferral.Complete();
+            try
+            {
+                var frame = Window.Current.Content as Frame;
+#if WINDOWS_PHONE_APP
+                var editorPage = frame != null ? frame.Content as WindowsPhone.EditorPage : null;
+#else
+                var editorPage = frame != null ? frame.Content as Windows.EditorPage : null;
+#endif
+                if (editorPage != null)
+                {
+                    editorPage.FlushEditorBufferForSuspension();
+                }
+
+                var locator = Resources["Locator"] as ViewModelLocator;
+                if (locator != null)
+                {
+                    await locator.Editor.SaveDirtyDocumentsAsync();
+                }
+            }
+            finally
+            {
+                deferral.Complete();
+            }
         }
 
         /// <summary>

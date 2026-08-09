@@ -12,6 +12,7 @@ using Windows.UI;
 using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Markup;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
 using Windows.Phone.UI.Input;
@@ -26,11 +27,16 @@ namespace MetroMarkdownEditor.WindowsPhone
         private readonly DispatcherTimer _undoTimer;
         private readonly DispatcherTimer _autoSaveTimer;
         private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
+        private readonly MarkdownRenderService _backgroundRenderService = new MarkdownRenderService();
         private readonly AutoSaveService _autoSave = AutoSaveService.Instance;
         private readonly Stack<string> _undoStack = new Stack<string>();
         private readonly Stack<string> _redoStack = new Stack<string>();
 
         private bool _isUndoRedoLocked;
+        private bool _isAutoPairEdit;
+        private bool _suppressTextChanged;
+        private bool _editorTextDirty;
+        private DocumentViewModel _dirtyEditorDocument;
         private string _lastEditorText = string.Empty;
         private bool _skeletonLoaded;
         private bool _isWebViewReady;
@@ -38,13 +44,20 @@ namespace MetroMarkdownEditor.WindowsPhone
         private bool _isImmersiveMode;
         private EditorViewMode _currentViewMode = EditorViewMode.Write;
         private ElementTheme _lastTheme = ElementTheme.Light;
+        private PreviewThemeType _lastPreviewTheme = PreviewThemeType.Grey;
         private INotifyPropertyChanged _themeViewModel;
+        private char? _pendingAutoPairCharacter;
+        private int _editorRevision;
+        private bool _isPreviewParseRunning;
+        private bool _isPageActive;
+        private DocumentViewModel _loadedEditorDocument;
 
         // 搜索功能状态变量
         private int _lastSearchIndex = -1;
         private string _lastSearchText = string.Empty;
         private int _lastHighlightStart = -1;
         private int _lastHighlightLength = 0;
+        private Windows.UI.Xaml.Controls.Primitives.Popup _outlinePopup;
 
         #endregion
 
@@ -63,7 +76,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             InitializeComponent();
 
-            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
             _typingTimer.Tick += TypingTimer_Tick;
 
             _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
@@ -71,12 +84,12 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             _autoSaveTimer = new DispatcherTimer();
             _autoSaveTimer.Tick += AutoSaveTimer_Tick;
-            _autoSave.SettingsChanged += OnAutoSaveSettingsChanged;
 
             // Register EditorBox Loaded for robust font handling after navigation
             EditorBox.Loaded += EditorBox_Loaded;
 
             ConfigureAutoSaveTimer();
+            ApplyRuntimeEditorSettings();
         }
 
         #endregion
@@ -86,6 +99,11 @@ namespace MetroMarkdownEditor.WindowsPhone
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+            _isPageActive = true;
+            _autoSave.SettingsChanged += OnAutoSaveSettingsChanged;
+            MarkdownSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged += OnMarkdownOrEditorSettingsChanged;
+            Window.Current.CoreWindow.CharacterReceived += CoreWindow_CharacterReceived;
 
             // Register hardware back button
             HardwareButtons.BackPressed += HardwareButtons_BackPressed;
@@ -136,6 +154,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
                 // Sync editor text
                 SyncEditorText();
+                ViewModel.RefreshPreview();
             }
 
             // Reset view mode
@@ -148,6 +167,9 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
+            FlushPendingEditorText(refreshPreview: false);
+            _isPageActive = false;
+            _editorRevision++;
             base.OnNavigatedFrom(e);
 
             // Unregister hardware back button
@@ -165,11 +187,19 @@ namespace MetroMarkdownEditor.WindowsPhone
             }
 
             _autoSave.SettingsChanged -= OnAutoSaveSettingsChanged;
+            MarkdownSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
+            EditorSettingsService.Instance.SettingsChanged -= OnMarkdownOrEditorSettingsChanged;
+            Window.Current.CoreWindow.CharacterReceived -= CoreWindow_CharacterReceived;
 
             // Stop timers
             _typingTimer.Stop();
             _undoTimer.Stop();
             _autoSaveTimer.Stop();
+        }
+
+        public void FlushEditorBufferForSuspension()
+        {
+            FlushPendingEditorText(refreshPreview: false);
         }
 
         private async void HardwareButtons_BackPressed(object sender, BackPressedEventArgs e)
@@ -178,6 +208,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             e.Handled = true;
 
             // Preserve unsaved untitled files
+            FlushPendingEditorText(refreshPreview: false);
             await PreserveUntitledFilesAsync();
 
             // Navigate to MainPage
@@ -188,6 +219,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private Task PreserveUntitledFilesAsync()
         {
             if (ViewModel == null) return Task.FromResult(0);
+            FlushPendingEditorText(refreshPreview: false);
 
             var recentService = ((ViewModelLocator)App.Current.Resources["Locator"]).Main?.RecentFilesService;
             if (recentService == null) return Task.FromResult(0);
@@ -221,6 +253,11 @@ namespace MetroMarkdownEditor.WindowsPhone
                 case EditorViewMode.Preview:
                     _currentViewMode = EditorViewMode.Write;
                     break;
+            }
+
+            if (_currentViewMode == EditorViewMode.Preview)
+            {
+                FlushPendingEditorText(refreshPreview: true);
             }
 
             UpdateViewMode();
@@ -276,8 +313,12 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (EditorBox?.Document == null) return;
 
             var content = ViewModel.ActiveDocument.Content ?? string.Empty;
-            EditorBox.Document.SetText(TextSetOptions.None, content);
-            _lastEditorText = content.Replace('\r', '\n');
+            _editorRevision++;
+            SetEditorTextWithoutNotification(content);
+            _lastEditorText = NormalizeLineEndings(content);
+            _editorTextDirty = false;
+            _dirtyEditorDocument = null;
+            _loadedEditorDocument = ViewModel.ActiveDocument;
 
             ApplyEditorFormatting();
             ResetUndoRedo();
@@ -293,8 +334,34 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             if (ViewModel != null && ViewModel.ActiveDocument != null)
             {
-                SyncEditorText();
+                if (!ReferenceEquals(_loadedEditorDocument, ViewModel.ActiveDocument))
+                {
+                    SyncEditorText();
+                }
+                else
+                {
+                    ApplyEditorFormatting();
+                }
             }
+        }
+
+        private void SetEditorTextWithoutNotification(string text)
+        {
+            _suppressTextChanged = true;
+            try
+            {
+                EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
+            }
+            finally
+            {
+                _suppressTextChanged = false;
+                _pendingAutoPairCharacter = null;
+            }
+        }
+
+        private static string NormalizeLineEndings(string text)
+        {
+            return (text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
         }
 
         /// <summary>
@@ -342,6 +409,31 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         #region Editor Events
 
+        private void CoreWindow_CharacterReceived(
+            Windows.UI.Core.CoreWindow sender,
+            Windows.UI.Core.CharacterReceivedEventArgs args)
+        {
+            if (EditorBox == null || EditorBox.FocusState == FocusState.Unfocused)
+            {
+                _pendingAutoPairCharacter = null;
+                return;
+            }
+
+            var ctrlState = sender.GetKeyState(Windows.System.VirtualKey.Control);
+            var isCtrlPressed = (ctrlState & Windows.UI.Core.CoreVirtualKeyStates.Down)
+                                == Windows.UI.Core.CoreVirtualKeyStates.Down;
+            if (isCtrlPressed || args.KeyCode > char.MaxValue)
+            {
+                _pendingAutoPairCharacter = null;
+                return;
+            }
+
+            var character = (char)args.KeyCode;
+            _pendingAutoPairCharacter = GetAutoPairClosingText(character, EditorSettingsService.Instance) != null
+                ? (char?)character
+                : null;
+        }
+
         private void EditorBox_TextChanged(object sender, RoutedEventArgs e)
         {
             HandleTextChanged(EditorBox);
@@ -351,16 +443,20 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private void HandleTextChanged(RichEditBox editor)
         {
-            if (_isUndoRedoLocked) return;
+            if (_isUndoRedoLocked || _suppressTextChanged || _isAutoPairEdit) return;
             if (ViewModel?.ActiveDocument == null) return;
             if (editor?.Document == null) return;
 
-            string text;
-            editor.Document.GetText(TextGetOptions.None, out text);
-            text = (text ?? "").Replace('\r', '\n').TrimEnd('\0', '\n');
+            var autoPairCharacter = _pendingAutoPairCharacter;
+            _pendingAutoPairCharacter = null;
+            if (autoPairCharacter.HasValue)
+            {
+                TryApplyAutoPairAtCaret(editor, autoPairCharacter.Value);
+            }
 
-            ViewModel.SetContentFromEditor(text);
-            _lastEditorText = text;
+            _editorRevision++;
+            _editorTextDirty = true;
+            _dirtyEditorDocument = ViewModel.ActiveDocument;
 
             // Restart timers
             _undoTimer.Stop();
@@ -374,10 +470,115 @@ namespace MetroMarkdownEditor.WindowsPhone
                 _autoSaveTimer.Stop();
                 _autoSaveTimer.Start();
             }
+
+            KeepCaretCenteredIfNeeded();
+        }
+
+        private bool TryApplyAutoPairAtCaret(RichEditBox editor, char insertedCharacter)
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.AutoPairBracketsAndQuotes && !settings.AutoPairCommonMarkdownSyntax) return false;
+
+            var selection = editor.Document.Selection;
+            var caret = selection.StartPosition;
+            if (caret <= 0 || selection.EndPosition != caret) return false;
+
+            string insertedText;
+            editor.Document.GetRange(caret - 1, caret).GetText(TextGetOptions.None, out insertedText);
+            if (string.IsNullOrEmpty(insertedText) || insertedText[0] != insertedCharacter) return false;
+
+            var closing = GetAutoPairClosingText(insertedCharacter, settings);
+            if (closing == null) return false;
+
+            string nextText = string.Empty;
+            try
+            {
+                editor.Document.GetRange(caret, caret + 1).GetText(TextGetOptions.None, out nextText);
+            }
+            catch
+            {
+                nextText = string.Empty;
+            }
+            if (!string.IsNullOrEmpty(nextText) && nextText[0] == closing[0]) return false;
+
+            try
+            {
+                _isAutoPairEdit = true;
+                selection.TypeText(closing);
+                selection.SetRange(caret, caret);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                _isAutoPairEdit = false;
+            }
+        }
+
+        private static string GetAutoPairClosingText(char inserted, EditorSettingsService settings)
+        {
+            if (settings.AutoPairBracketsAndQuotes)
+            {
+                switch (inserted)
+                {
+                    case '(':
+                        return ")";
+                    case '[':
+                        return "]";
+                    case '{':
+                        return "}";
+                    case '"':
+                        return "\"";
+                    case '\'':
+                        return "'";
+                }
+            }
+
+            if (settings.AutoPairCommonMarkdownSyntax)
+            {
+                switch (inserted)
+                {
+                    case '*':
+                    case '_':
+                    case '~':
+                    case '`':
+                        return inserted.ToString();
+                }
+            }
+
+            return null;
+        }
+
+        private void KeepCaretCenteredIfNeeded()
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.TypewriterFocusModeEnabled || !settings.KeepCaretInMiddleWhenTypewriterModeEnabled) return;
+
+            try
+            {
+                var scrollViewer = FindScrollViewer(EditorBox);
+                if (scrollViewer == null || EditorBox?.Document == null) return;
+
+                Windows.Foundation.Rect rect;
+                int hit;
+                EditorBox.Document.Selection.GetRect(PointOptions.ClientCoordinates, out rect, out hit);
+                if (rect.Height <= 0) return;
+
+                var target = scrollViewer.VerticalOffset + rect.Top - (scrollViewer.ViewportHeight / 2) + rect.Height;
+                target = Math.Max(0, Math.Min(target, scrollViewer.ScrollableHeight));
+                scrollViewer.ChangeView(null, target, null, true);
+            }
+            catch
+            {
+            }
         }
 
         private void EditorBox_KeyDown(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
+            _pendingAutoPairCharacter = null;
             HandleKeyDown(EditorBox, e);
         }
 
@@ -392,7 +593,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (isCtrl && e.Key == Windows.System.VirtualKey.S)
             {
                 e.Handled = true;
-                ViewModel?.SaveCommand?.Execute(null);
+                var _ = SaveCurrentDocumentAsync();
                 return;
             }
 
@@ -410,11 +611,108 @@ namespace MetroMarkdownEditor.WindowsPhone
                 return;
             }
 
+            if (isCtrl && e.Key == Windows.System.VirtualKey.C)
+            {
+                if (TryHandlePlainTextClipboard(cut: false))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            if (isCtrl && e.Key == Windows.System.VirtualKey.X)
+            {
+                if (TryHandlePlainTextClipboard(cut: true))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             if (e.Key == Windows.System.VirtualKey.Tab)
             {
                 e.Handled = true;
-                editor?.Document?.Selection?.TypeText("\t");
+                editor?.Document?.Selection?.TypeText(new string(' ', MarkdownSettingsService.Instance.CodeIndentSize));
             }
+        }
+
+        private async Task SaveCurrentDocumentAsync()
+        {
+            if (ViewModel == null) return;
+            FlushPendingEditorText(refreshPreview: false);
+            await ViewModel.SaveAsync();
+        }
+
+        private async void SaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            await SaveCurrentDocumentAsync();
+        }
+
+        private bool TryHandlePlainTextClipboard(bool cut)
+        {
+#if WINDOWS_PHONE_APP
+            return false;
+#else
+            var settings = EditorSettingsService.Instance;
+            if (!settings.CopyMarkdownSourceAsPlainText && !settings.CopyCutWholeLinesWhenNoSelection)
+            {
+                return false;
+            }
+
+            var doc = EditorBox.Document;
+            if (doc == null) return false;
+
+            string fullText = string.Empty;
+            doc.GetText(TextGetOptions.None, out fullText);
+            if (fullText == null) fullText = string.Empty;
+
+            var selection = doc.Selection;
+            var start = selection.StartPosition;
+            var end = selection.EndPosition;
+            if (start > end) { var tmp = start; start = end; end = tmp; }
+
+            string textToCopy;
+            int replaceStart = start;
+            int replaceEnd = end;
+            var hasSelection = start != end;
+
+            if (!hasSelection)
+            {
+                if (!settings.CopyCutWholeLinesWhenNoSelection) return false;
+
+                replaceStart = start;
+                while (replaceStart > 0 && fullText[replaceStart - 1] != '\r' && fullText[replaceStart - 1] != '\n') replaceStart--;
+
+                replaceEnd = end;
+                while (replaceEnd < fullText.Length && fullText[replaceEnd] != '\r' && fullText[replaceEnd] != '\n') replaceEnd++;
+                if (replaceEnd < fullText.Length)
+                {
+                    replaceEnd++;
+                    if (replaceEnd < fullText.Length && fullText[replaceEnd - 1] == '\r' && fullText[replaceEnd] == '\n') replaceEnd++;
+                }
+
+                textToCopy = fullText.Substring(replaceStart, Math.Max(0, replaceEnd - replaceStart));
+            }
+            else
+            {
+                var range = doc.GetRange(start, end);
+                range.GetText(TextGetOptions.None, out textToCopy);
+            }
+
+            if (string.IsNullOrEmpty(textToCopy)) return false;
+
+            var package = new DataPackage();
+            package.SetText(settings.NormalizeLineEndings(textToCopy.TrimEnd('\0')));
+            Clipboard.SetContent(package);
+
+            if (cut)
+            {
+                var range = doc.GetRange(replaceStart, replaceEnd);
+                range.SetText(TextSetOptions.None, string.Empty);
+            }
+
+            return true;
+#endif
         }
 
         #endregion
@@ -435,22 +733,29 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             _undoStack.Clear();
             _redoStack.Clear();
-            var snapshot = GetNormalizedEditorText();
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
             _undoStack.Push(snapshot);
         }
 
         private void SaveSnapshot()
         {
-            var snapshot = GetNormalizedEditorText();
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
             if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
             {
                 _undoStack.Push(snapshot);
+                _redoStack.Clear();
             }
-            _redoStack.Clear();
         }
 
         private void Undo()
         {
+            var snapshot = FlushPendingEditorText(refreshPreview: false);
+            if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
+            {
+                _undoStack.Push(snapshot);
+                _redoStack.Clear();
+            }
+
             if (_undoStack.Count <= 1) return;
 
             _isUndoRedoLocked = true;
@@ -489,7 +794,44 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (EditorBox?.Document == null) return string.Empty;
             string text;
             EditorBox.Document.GetText(TextGetOptions.None, out text);
-            return (text ?? "").Replace('\r', '\n').TrimEnd('\0', '\n');
+            return NormalizeRichEditText(text);
+        }
+
+        private static string NormalizeRichEditText(string text)
+        {
+            var normalized = (text ?? string.Empty).TrimEnd('\0');
+            if (normalized.EndsWith("\r", StringComparison.Ordinal))
+            {
+                normalized = normalized.Substring(0, normalized.Length - 1);
+            }
+            return NormalizeLineEndings(normalized);
+        }
+
+        private string FlushPendingEditorText(bool refreshPreview)
+        {
+            if (!_editorTextDirty || _dirtyEditorDocument == null || EditorBox?.Document == null)
+            {
+                return _lastEditorText ?? string.Empty;
+            }
+
+            var text = GetNormalizedEditorText();
+            if (ReferenceEquals(_dirtyEditorDocument, ViewModel?.ActiveDocument))
+            {
+                ViewModel.SetContentFromEditor(text);
+                if (refreshPreview)
+                {
+                    ViewModel.RefreshPreview();
+                }
+            }
+            else
+            {
+                _dirtyEditorDocument.Content = text;
+            }
+
+            _lastEditorText = text;
+            _editorTextDirty = false;
+            _dirtyEditorDocument = null;
+            return text;
         }
 
         private void ApplySnapshot(string text)
@@ -497,14 +839,19 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (EditorBox?.Document == null) return;
 
             _undoTimer.Stop();
-            EditorBox.Document.SetText(TextSetOptions.None, text ?? "");
-            _lastEditorText = (text ?? "").Replace('\r', '\n');
+            _typingTimer.Stop();
+            _editorRevision++;
+            SetEditorTextWithoutNotification(text);
+            _lastEditorText = NormalizeLineEndings(text);
+            _editorTextDirty = false;
+            _dirtyEditorDocument = null;
 
             ApplyEditorFormatting();
             HighlightMarkdownSyntax();
 
             ViewModel?.SetContentFromEditor(text);
             ViewModel?.RefreshPreview();
+            _loadedEditorDocument = ViewModel?.ActiveDocument;
             // Note: RenderPreviewAsync will be triggered by ViewModel.PreviewContent change
         }
 
@@ -512,12 +859,45 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         #region Timers
 
-        private void TypingTimer_Tick(object sender, object e)
+        private async void TypingTimer_Tick(object sender, object e)
         {
             _typingTimer.Stop();
+            if (_isPreviewParseRunning) return;
+
+            var document = ViewModel?.ActiveDocument;
+            var revision = _editorRevision;
+            var markdown = FlushPendingEditorText(refreshPreview: false);
             HighlightMarkdownSyntax();
-            ViewModel?.RefreshPreview();
-            // Note: RenderPreviewAsync will be triggered by ViewModel.PreviewContent change
+
+            if (_currentViewMode != EditorViewMode.Preview || document == null)
+            {
+                return;
+            }
+
+            _isPreviewParseRunning = true;
+            try
+            {
+                var rendered = await Task.Run(() => _backgroundRenderService.RenderMarkdown(markdown));
+                if (_isPageActive
+                    && revision == _editorRevision
+                    && ReferenceEquals(document, ViewModel?.ActiveDocument)
+                    && string.Equals(document.Content ?? string.Empty, markdown, StringComparison.Ordinal))
+                {
+                    ViewModel.ApplyPreviewResult(rendered, refreshCss: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Background preview render failed: " + ex.Message);
+            }
+            finally
+            {
+                _isPreviewParseRunning = false;
+                if (_editorTextDirty && _isPageActive)
+                {
+                    _typingTimer.Start();
+                }
+            }
         }
 
         private void UndoTimer_Tick(object sender, object e)
@@ -530,6 +910,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             _autoSaveTimer.Stop();
             if (!_autoSave.IsEnabled) return;
+            FlushPendingEditorText(refreshPreview: false);
             if (ViewModel?.ActiveDocument?.File == null) return;
             if (!ViewModel.ActiveDocument.IsDirty) return;
 
@@ -560,6 +941,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             if (ViewModel == null) return;
 
             var theme = GetCurrentTheme();
+            var previewTheme = ThemeSvc != null ? ThemeSvc.PreviewTheme : PreviewThemeType.Grey;
             ViewModel.SetTheme(theme);
 
             // Determine which WebView to use
@@ -571,12 +953,13 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             if (targetWebView == null) return;
 
-            if (!_skeletonLoaded || theme != _lastTheme)
+            if (!_skeletonLoaded || theme != _lastTheme || previewTheme != _lastPreviewTheme)
             {
                 _isWebViewReady = false;
                 await _renderService.LoadSkeletonAsync(targetWebView, BuildPhoneCss(), theme);
                 _skeletonLoaded = true;
                 _lastTheme = theme;
+                _lastPreviewTheme = previewTheme;
             }
 
             if (!_isWebViewReady)
@@ -615,13 +998,25 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private string BuildPhoneCss()
         {
+            var isDark = GetCurrentTheme() == ElementTheme.Dark;
+            var background = ThemeSvc != null
+                ? ThemeSvc.GetPreviewBackground()
+                : (isDark ? "#1d1d1d" : "#ffffff");
+            var foreground = isDark ? "#f3f3f3" : "#1a1a1a";
+
             return @"<style>
+                html, body {
+                    background-color: " + background + @";
+                    min-height: 100%;
+                }
                 body {
                     font-family: 'Segoe UI', sans-serif;
                     font-size: 16px;
                     line-height: 1.6;
                     padding: 12px 16px;
                     margin: 0;
+                    color: " + foreground + @";
+                    background-color: " + background + @";
                     word-wrap: break-word;
                     overflow-x: hidden;
                 }
@@ -713,8 +1108,8 @@ namespace MetroMarkdownEditor.WindowsPhone
             }
             else if (e.PropertyName == "ActiveDocument")
             {
+                FlushPendingEditorText(refreshPreview: false);
                 SyncEditorText();
-                ResetUndoRedo();
             }
         }
 
@@ -722,9 +1117,32 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             var _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
             {
+                _skeletonLoaded = false;
                 HighlightMarkdownSyntax();
                 var __ = RenderPreviewAsync();
             });
+        }
+
+        private void OnMarkdownOrEditorSettingsChanged(object sender, EventArgs e)
+        {
+            var _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+            {
+                FlushPendingEditorText(refreshPreview: false);
+                ApplyRuntimeEditorSettings();
+                _skeletonLoaded = false;
+                HighlightMarkdownSyntax();
+                if (ViewModel != null)
+                {
+                    ViewModel.RefreshPreview();
+                }
+                var __ = RenderPreviewAsync();
+            });
+        }
+
+        private void ApplyRuntimeEditorSettings()
+        {
+            if (EditorBox == null) return;
+            EditorBox.IsSpellCheckEnabled = EditorSettingsService.Instance.IsSpellCheckEnabled;
         }
 
         #endregion
@@ -739,7 +1157,234 @@ namespace MetroMarkdownEditor.WindowsPhone
             var format = button.Tag as string;
             if (string.IsNullOrEmpty(format)) return;
 
+            FlushPendingEditorText(refreshPreview: false);
             await ViewModel.ExportAsync(format);
+        }
+
+        #endregion
+
+        #region Outline
+
+        private void OutlineButton_Click(object sender, RoutedEventArgs e)
+        {
+            ShowOutlinePopup();
+        }
+
+        private void ShowOutlinePopup()
+        {
+            FlushPendingEditorText(refreshPreview: true);
+
+            if (_outlinePopup != null && _outlinePopup.IsOpen)
+            {
+                _outlinePopup.IsOpen = false;
+                return;
+            }
+
+            var items = ViewModel != null ? ViewModel.OutlineItems : null;
+            var bounds = Window.Current.Bounds;
+            var panel = new Grid
+            {
+                Width = bounds.Width,
+                MaxHeight = Math.Max(260, bounds.Height * 0.72),
+                Background = (SolidColorBrush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"]
+            };
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var header = new Grid { Margin = new Thickness(16, 14, 10, 8) };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var title = new TextBlock
+            {
+                Text = "Outline",
+                FontSize = 24,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(title, 0);
+
+            var close = new Button
+            {
+                Content = "x",
+                Width = 40,
+                Height = 40,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                BorderThickness = new Thickness(0)
+            };
+            close.Click += (s, args) =>
+            {
+                if (_outlinePopup != null)
+                {
+                    _outlinePopup.IsOpen = false;
+                }
+            };
+            Grid.SetColumn(close, 1);
+
+            header.Children.Add(title);
+            header.Children.Add(close);
+            Grid.SetRow(header, 0);
+            panel.Children.Add(header);
+
+            if (items == null || items.Count == 0)
+            {
+                var empty = new TextBlock
+                {
+                    Text = "No headings",
+                    FontSize = 17,
+                    Opacity = 0.7,
+                    Margin = new Thickness(16, 24, 16, 24)
+                };
+                Grid.SetRow(empty, 1);
+                panel.Children.Add(empty);
+            }
+            else
+            {
+                var list = new ListView
+                {
+                    ItemsSource = items,
+                    IsItemClickEnabled = true,
+                    SelectionMode = ListViewSelectionMode.None,
+                    Margin = new Thickness(4, 0, 4, 10),
+                    ItemTemplate = BuildOutlineItemTemplate()
+                };
+                list.ItemClick += OutlineList_ItemClick;
+                Grid.SetRow(list, 1);
+                panel.Children.Add(list);
+            }
+
+            _outlinePopup = new Windows.UI.Xaml.Controls.Primitives.Popup
+            {
+                Child = new Border
+                {
+                    Child = panel,
+                    BorderBrush = new SolidColorBrush(Colors.Gray),
+                    BorderThickness = new Thickness(1, 1, 1, 0)
+                },
+                IsLightDismissEnabled = true
+            };
+            _outlinePopup.HorizontalOffset = 0;
+            _outlinePopup.VerticalOffset = Math.Max(0, bounds.Height - panel.MaxHeight - 72);
+            _outlinePopup.IsOpen = true;
+        }
+
+        private static DataTemplate BuildOutlineItemTemplate()
+        {
+            const string template =
+                "<DataTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">" +
+                "<Grid Padding=\"{Binding Indent}\" MinHeight=\"44\">" +
+                "<TextBlock Text=\"{Binding Title}\" FontSize=\"17\" TextTrimming=\"CharacterEllipsis\" VerticalAlignment=\"Center\"/>" +
+                "</Grid>" +
+                "</DataTemplate>";
+            return (DataTemplate)XamlReader.Load(template);
+        }
+
+        private async void OutlineList_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var item = e.ClickedItem as MarkdownOutlineItem;
+            if (item == null)
+            {
+                return;
+            }
+
+            if (_outlinePopup != null)
+            {
+                _outlinePopup.IsOpen = false;
+            }
+
+            await NavigateToOutlineItemAsync(item);
+        }
+
+        private async Task NavigateToOutlineItemAsync(MarkdownOutlineItem item)
+        {
+            FlushPendingEditorText(refreshPreview: true);
+
+            if (item == null)
+            {
+                return;
+            }
+
+            if (_currentViewMode == EditorViewMode.Write)
+            {
+                NavigateEditorToLine(item.Line);
+                return;
+            }
+
+            await RenderPreviewAsync();
+            await NavigatePreviewToOutlineItemAsync(item);
+        }
+
+        private void NavigateEditorToLine(int line)
+        {
+            if (EditorBox == null || EditorBox.Document == null)
+            {
+                return;
+            }
+
+            var text = GetNormalizedEditorText();
+            var position = GetLineStartPosition(text, line);
+            try
+            {
+                EditorBox.Focus(FocusState.Programmatic);
+                var range = EditorBox.Document.GetRange(position, position);
+                EditorBox.Document.Selection.SetRange(position, position);
+                range.ScrollIntoView(PointOptions.Start);
+            }
+            catch
+            {
+            }
+        }
+
+        private static int GetLineStartPosition(string text, int line)
+        {
+            if (line <= 0 || string.IsNullOrEmpty(text))
+            {
+                return 0;
+            }
+
+            int position = 0;
+            int currentLine = 0;
+            while (position < text.Length && currentLine < line)
+            {
+                if (text[position] == '\n')
+                {
+                    currentLine++;
+                }
+                position++;
+            }
+
+            return Math.Min(position, text.Length);
+        }
+
+        private async Task NavigatePreviewToOutlineItemAsync(MarkdownOutlineItem item)
+        {
+            if (PreviewWebView == null || !_isWebViewReady || item == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var escaped = EscapeJavaScriptString(item.AnchorId);
+                var block = item.BlockIndex.ToString();
+                var script = "var el=document.querySelector('[data-block=\"" + block + "\"]');" +
+                             "if(!el){ el=document.getElementById('" + escaped + "'); }" +
+                             "if(el){ el.scrollIntoView(true); 'ok'; } else { 'missing'; }";
+                await PreviewWebView.InvokeScriptAsync("eval", new[] { script });
+            }
+            catch
+            {
+            }
+        }
+
+        private static string EscapeJavaScriptString(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("'", "\\'")
+                .Replace("\r", "")
+                .Replace("\n", "");
         }
 
         #endregion
@@ -1048,6 +1693,23 @@ namespace MetroMarkdownEditor.WindowsPhone
             {
                 // 忽略脚本执行错误
             }
+        }
+
+        private ScrollViewer FindScrollViewer(DependencyObject root)
+        {
+            if (root == null) return null;
+            var scrollViewer = root as ScrollViewer;
+            if (scrollViewer != null) return scrollViewer;
+
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                var result = FindScrollViewer(child);
+                if (result != null) return result;
+            }
+
+            return null;
         }
 
         #endregion

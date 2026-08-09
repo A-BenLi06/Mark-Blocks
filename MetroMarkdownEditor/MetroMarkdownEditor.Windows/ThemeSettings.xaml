@@ -2,18 +2,95 @@
     x:Class="MetroMarkdownEditor.Windows.ThemeSettings"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Personalization"
+    Title="Appearance"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
 
     <ScrollViewer>
         <StackPanel Margin="24,24,24,24">
+            <TextBlock Text="Window Style"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,0,0,8" />
+            <TextBlock Text="Applied after restart."
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Opacity="0.6"
+                       Margin="0,0,0,8" />
+            <RadioButton Content="Classic"
+                         GroupName="WindowStyle"
+                         IsChecked="{Binding IsClassicWindowStyle, Mode=TwoWay}" />
+            <RadioButton Content="Unibody"
+                         GroupName="WindowStyle"
+                         IsChecked="{Binding IsUnibodyWindowStyle, Mode=TwoWay}" />
+
+            <TextBlock Text="Font Size"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,24,0,8" />
+            <RadioButton Content="Auto (Recommended)"
+                         GroupName="FontSizeMode"
+                         IsChecked="{Binding IsFontSizeAuto, Mode=TwoWay}" />
+            <RadioButton Content="Customized"
+                         GroupName="FontSizeMode"
+                         IsChecked="{Binding IsFontSizeCustomized, Mode=TwoWay}" />
+            <TextBox Text="{Binding CustomFontSize, Mode=TwoWay}"
+                     PlaceholderText="18"
+                     HorizontalAlignment="Stretch"
+                     Margin="0,8,0,0" />
+
+            <TextBlock Text="Zoom"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,24,0,8" />
+            <ComboBox SelectedIndex="{Binding ZoomPercentIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="75%" />
+                <ComboBoxItem Content="90%" />
+                <ComboBoxItem Content="100%" />
+                <ComboBoxItem Content="110%" />
+                <ComboBoxItem Content="125%" />
+                <ComboBoxItem Content="150%" />
+                <ComboBoxItem Content="175%" />
+                <ComboBoxItem Content="200%" />
+            </ComboBox>
+            <CheckBox Content="Zoom when using mouse wheel and holding Ctrl key"
+                      IsChecked="{Binding ZoomWithCtrlMouseWheel, Mode=TwoWay}"
+                      Margin="0,8,0,0" />
+            <Button Content="Reset to Default"
+                    Click="ResetZoom_Click"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,8,0,0" />
+
+            <TextBlock Text="Status Bar"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,24,0,8" />
+            <CheckBox Content="Show status bar"
+                      IsChecked="{Binding ShowStatusBar, Mode=TwoWay}" />
+
+            <TextBlock Text="Word Count"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,24,0,8" />
+            <TextBox Text="{Binding ReadingSpeedWordsPerMinute, Mode=TwoWay}"
+                     PlaceholderText="382"
+                     HorizontalAlignment="Stretch" />
+            <Button Content="Reset to Default"
+                    Click="ResetReadingSpeed_Click"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,8,0,0" />
+
             <!-- Theme Switch -->
             <TextBlock Text="Theme"
                        FontSize="18"
                        FontWeight="SemiBold"
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
-                       Margin="0,0,0,8" />
+                       Margin="0,24,0,8" />
             <TextBlock Text="Switch between light and dark for the editor and preview."
                        Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                        Opacity="0.6"
@@ -88,6 +165,25 @@
                          GroupName="PreviewTheme"
                          IsChecked="{Binding IsPreviewThemeTokyoNight, Mode=TwoWay}"
                          Margin="0,0,0,8" />
+
+            <TextBlock Text="Themes"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,24,0,8" />
+            <TextBlock Text="Light Theme"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,0,0,4" />
+            <TextBox Text="{Binding LightThemeName, Mode=TwoWay}"
+                     HorizontalAlignment="Stretch" />
+            <TextBlock Text="Dark Theme"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <TextBox Text="{Binding DarkThemeName, Mode=TwoWay}"
+                     HorizontalAlignment="Stretch" />
+            <CheckBox Content="Use separate theme in dark mode"
+                      IsChecked="{Binding UseSeparateThemeInDarkMode, Mode=TwoWay}"
+                      Margin="0,8,0,0" />
         </StackPanel>
     </ScrollViewer>
 </SettingsFlyout>

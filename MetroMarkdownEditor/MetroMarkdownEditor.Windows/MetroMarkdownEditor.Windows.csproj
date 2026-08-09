@@ -19,7 +19,7 @@
     <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
     <AppxBundlePlatforms>x86|x64|arm</AppxBundlePlatforms>
     <AppxBundle>Never</AppxBundle>
-    <AppxPackageDir>C:\Users\ben_l\Documents\Coding\CMetro\MetroMarkdownEditor\MetroMarkdownEditor\MetroMarkdownEditor.Windows\AppPackages\2.2.0\</AppxPackageDir>
+    <AppxPackageDir>$(MSBuildProjectDirectory)\AppPackages\2.2.0\</AppxPackageDir>
     <AppxSymbolPackageEnabled>False</AppxSymbolPackageEnabled>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -114,6 +114,18 @@
     <Compile Include="AutoSaveSettings.xaml.cs">
       <DependentUpon>AutoSaveSettings.xaml</DependentUpon>
     </Compile>
+    <Compile Include="MarkdownSettings.xaml.cs">
+      <DependentUpon>MarkdownSettings.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="EditorSettings.xaml.cs">
+      <DependentUpon>EditorSettings.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="ImageSettings.xaml.cs">
+      <DependentUpon>ImageSettings.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="ExportSettings.xaml.cs">
+      <DependentUpon>ExportSettings.xaml</DependentUpon>
+    </Compile>
     <Compile Include="EditorPage.xaml.cs">
       <DependentUpon>EditorPage.xaml</DependentUpon>
     </Compile>
@@ -150,6 +162,22 @@
       <SubType>Designer</SubType>
     </Page>
     <Page Include="AutoSaveSettings.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="MarkdownSettings.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="EditorSettings.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ImageSettings.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ExportSettings.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>

@@ -1,0 +1,140 @@
+<SettingsFlyout
+    x:Class="MetroMarkdownEditor.Windows.EditorSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Editor"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
+
+    <ScrollViewer>
+        <StackPanel Margin="24,24,24,32">
+            <TextBlock Text="Indent Size on Save"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,0,0,8" />
+            <TextBlock Text="Only apply to quotes and lists created from menu bar or hybrid view."
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Opacity="0.6"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8" />
+            <ComboBox SelectedIndex="{Binding IndentSizeOnSaveIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Auto" />
+                <ComboBoxItem Content="2" />
+                <ComboBoxItem Content="3" />
+                <ComboBoxItem Content="4" />
+                <ComboBoxItem Content="5" />
+                <ComboBoxItem Content="Tab" />
+            </ComboBox>
+            <CheckBox Content="Pretty indentation"
+                      IsChecked="{Binding PrettyIndentation, Mode=TwoWay}"
+                      Margin="0,8,0,0" />
+
+            <TextBlock Text="Auto Pair"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Auto pair brackets and quotes"
+                      IsChecked="{Binding AutoPairBracketsAndQuotes, Mode=TwoWay}" />
+            <CheckBox Content="Auto pair common Markdown syntax"
+                      IsChecked="{Binding AutoPairCommonMarkdownSyntax, Mode=TwoWay}" />
+
+            <TextBlock Text="Auto Complete"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Enable autocomplete for Emojis"
+                      IsChecked="{Binding EnableEmojiAutocomplete, Mode=TwoWay}" />
+
+            <TextBlock Text="Live Rendering"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Display source for simple blocks on focus"
+                      IsChecked="{Binding DisplaySourceForSimpleBlocksOnFocus, Mode=TwoWay}" />
+
+            <TextBlock Text="Default Copy Behavior"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Copy Markdown source as plain text"
+                      IsChecked="{Binding CopyMarkdownSourceAsPlainText, Mode=TwoWay}" />
+            <CheckBox Content="Copy or cut whole lines when there is no selection"
+                      IsChecked="{Binding CopyCutWholeLinesWhenNoSelection, Mode=TwoWay}" />
+
+            <TextBlock Text="Default Line Ending"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <RadioButton Content="LF (Unix Style)"
+                         GroupName="DefaultLineEnding"
+                         IsChecked="{Binding IsDefaultLineEndingLF, Mode=TwoWay}" />
+            <RadioButton Content="CRLF (Windows Style)"
+                         GroupName="DefaultLineEnding"
+                         IsChecked="{Binding IsDefaultLineEndingCRLF, Mode=TwoWay}" />
+
+            <TextBlock Text="Spell Check"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <ComboBox SelectedIndex="{Binding SpellCheckModeIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Auto Detect Language" />
+                <ComboBoxItem Content="Disable Spell Check" />
+                <ComboBoxItem Content="English (US)" />
+                <ComboBoxItem Content="English (UK)" />
+                <ComboBoxItem Content="Čeština" />
+                <ComboBoxItem Content="Dansk" />
+                <ComboBoxItem Content="Deutsch" />
+                <ComboBoxItem Content="Español" />
+                <ComboBoxItem Content="Ελληνικά" />
+                <ComboBoxItem Content="Français" />
+                <ComboBoxItem Content="Galego" />
+                <ComboBoxItem Content="Hrvatski" />
+                <ComboBoxItem Content="Italiano" />
+                <ComboBoxItem Content="Limba Română" />
+                <ComboBoxItem Content="Nederlands" />
+                <ComboBoxItem Content="Magyar" />
+                <ComboBoxItem Content="Orang Melayu" />
+                <ComboBoxItem Content="Polski" />
+                <ComboBoxItem Content="Português (Brasil)" />
+                <ComboBoxItem Content="Português (Portugal)" />
+                <ComboBoxItem Content="Русский" />
+                <ComboBoxItem Content="Schweizerdeutsch" />
+                <ComboBoxItem Content="Slovenčina" />
+                <ComboBoxItem Content="Slovenščina" />
+                <ComboBoxItem Content="Svenska" />
+                <ComboBoxItem Content="Tiếng Việt" />
+                <ComboBoxItem Content="Türkçe" />
+                <ComboBoxItem Content="Українська мова" />
+                <ComboBoxItem Content="فارسی" />
+                <ComboBoxItem Content="العربية" />
+                <ComboBoxItem Content="한국어" />
+                <ComboBoxItem Content="中文" />
+                <ComboBoxItem Content="日本語" />
+                <ComboBoxItem Content="עברית" />
+            </ComboBox>
+
+            <TextBlock Text="Typewriter Mode"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Always keep caret in middle of screen when typewriter mode is enabled"
+                      IsChecked="{Binding KeepCaretInMiddleWhenTypewriterModeEnabled, Mode=TwoWay}" />
+            <CheckBox Content="Enable Typewriter / Focus Mode"
+                      IsChecked="{Binding TypewriterFocusModeEnabled, Mode=TwoWay}" />
+            <Button Content="Turn off Typewriter / Focus Mode"
+                    Click="TurnOffTypewriter_Click"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,12,0,0" />
+        </StackPanel>
+    </ScrollViewer>
+</SettingsFlyout>

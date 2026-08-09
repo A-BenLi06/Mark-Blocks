@@ -144,6 +144,12 @@
                         <SymbolIcon Symbol="Find"/>
                     </AppBarButton.Icon>
                 </AppBarButton>
+
+                <AppBarButton Label="Outline" Click="OutlineButton_Click">
+                    <AppBarButton.Icon>
+                        <SymbolIcon Symbol="List"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
             </CommandBar.PrimaryCommands>
 
             <CommandBar.SecondaryCommands>
@@ -159,7 +165,7 @@
                     </AppBarButton.Icon>
                 </AppBarButton>
 
-                <AppBarButton Label="Save" Command="{Binding SaveCommand}">
+                <AppBarButton Label="Save" Click="SaveButton_Click">
                     <AppBarButton.Icon>
                         <SymbolIcon Symbol="Save"/>
                     </AppBarButton.Icon>

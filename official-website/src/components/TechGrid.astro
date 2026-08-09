@@ -1,0 +1,26 @@
+---
+import Icon from "./Icon.astro";
+// 6 tech tiles, wide/square rhythm (gap-free on 4-col).
+const techs = [
+  { label: "RENDER",  icon: "code",    name: "highlight.js",   desc: "atom-one-min light/dark 代码块风格。", color: "tile-cyan",    size: "tile-wide" },
+  { label: "PARSER",  icon: "parser",  name: "MarkDig V0.15.5", desc: "Windows Phone 8.1 支持的最后一个版本。", color: "tile-violet",  size: "" },
+  { label: "MATH",    icon: "math",    name: "KaTeX V0.11.1",  desc: "渲染数学公式。", color: "tile-magenta", size: "" },
+  { label: "WEBVIEW", icon: "webview", name: "IE11 WebView",   desc: "text-justify 保证大块文本整齐度。", color: "tile-emerald", size: "" },
+  { label: "DIAGRAM", icon: "diagram", name: "Mermaid 7",      desc: "图表支持（甘特图暂不可用）。", color: "tile-amber",   size: "" },
+  { label: "UI",      icon: "ui",      name: "磁贴样式",        desc: "较丰富的磁贴样式与自定义主页背景。", color: "tile-teal",    size: "tile-wide" },
+];
+---
+
+<div class="tile-grid">
+  {
+    techs.map((t) => (
+      <article class={`tile ${t.color} ${t.size} tech`}>
+        <div class="tile-icon"><Icon name={t.icon} size={34} /></div>
+        <div class="tile-label">{t.label}</div>
+        <h3 class="tech-name">{t.name}</h3>
+        <p class="tech-desc">{t.desc}</p>
+        <span class="tile-brand" />
+      </article>
+    ))
+  }
+</div>

@@ -17,7 +17,7 @@
     <SynthesizeLinkMetadata>true</SynthesizeLinkMetadata>
     <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
     <AppxBundlePlatforms>x86|arm</AppxBundlePlatforms>
-    <AppxPackageDir>C:\Users\ben_l\Documents\Coding\CMetro\MetroMarkdownEditor\MetroMarkdownEditor\MetroMarkdownEditor.WindowsPhone\AppPackages\2.2.0\</AppxPackageDir>
+    <AppxPackageDir>$(MSBuildProjectDirectory)\AppPackages\2.2.0\</AppxPackageDir>
     <AppxSymbolPackageEnabled>False</AppxSymbolPackageEnabled>
     <AppxBundle>Never</AppxBundle>
   </PropertyGroup>

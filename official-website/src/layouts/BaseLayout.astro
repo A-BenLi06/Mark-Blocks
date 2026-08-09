@@ -1,0 +1,112 @@
+---
+import "../styles/global.css";
+import AppBar from "../components/AppBar.astro";
+import BottomAppBar from "../components/BottomAppBar.astro";
+import Footer from "../components/Footer.astro";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "Mark::Blocks - 为 Metro 而生的 Markdown 编辑器",
+  description = "Mark::Blocks 是一款极致 Metro 风格的 Markdown 编辑器，支持 Windows 8.1+ / Windows RT 8.1+ / Windows Phone 8.1+。",
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="theme-color" content="#1d1d1d" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <title>{title}</title>
+    {/* IE10/11 detection - runs before CSS to set the .ie class (no FOUC). ES5. */}
+    <script is:inline>
+      (function () {
+        var ua = navigator.userAgent || "";
+        var ie = /MSIE\s/.test(ua) || /Trident\//.test(ua);
+        if (ie) {
+          var d = document.documentElement;
+          d.className = (d.className ? d.className + " " : "") + "ie";
+          var m = /MSIE\s(\d+)/.exec(ua) || /rv:(\d+)/.exec(ua);
+          if (m && m[1]) d.className += " ie" + m[1];
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a id="top"></a>
+    <AppBar />
+    <slot />
+    <Footer />
+    <BottomAppBar />
+
+    {/* Bottom app bar interactions. ES5 + feature-detect for IE10/11. */}
+    <script is:inline>
+      (function () {
+        var navBtns = Array.prototype.slice.call(
+          document.querySelectorAll(".appbar-bottom .nav-btn")
+        );
+        if (!navBtns.length) return;
+
+        function setActive(href) {
+          for (var i = 0; i < navBtns.length; i++) {
+            var b = navBtns[i];
+            if (b.getAttribute("href") === href) b.classList.add("is-active");
+            else b.classList.remove("is-active");
+          }
+        }
+
+        // Same-page (#) scroll-spy, only if IntersectionObserver exists.
+        var hashLinks = [];
+        for (var h = 0; h < navBtns.length; h++) {
+          var hr = navBtns[h].getAttribute("href") || "";
+          if (hr.charAt(0) === "#") hashLinks.push(navBtns[h]);
+        }
+        var sections = [];
+        for (var s = 0; s < hashLinks.length; s++) {
+          var sel = hashLinks[s].getAttribute("href");
+          var el = sel ? document.querySelector(sel) : null;
+          if (el) sections.push(el);
+        }
+        if (window.IntersectionObserver && sections.length) {
+          var io = new IntersectionObserver(function (entries) {
+            for (var n = 0; n < entries.length; n++) {
+              if (entries[n].isIntersecting) {
+                setActive("#" + entries[n].target.id);
+              }
+            }
+          }, { rootMargin: "-45% 0px -50% 0px", threshold: 0 });
+          for (var m = 0; m < sections.length; m++) io.observe(sections[m]);
+        }
+
+        // Path-based active state for Docs / Home buttons.
+        var path = location.pathname;
+        function setByMatch(match) {
+          for (var p = 0; p < navBtns.length; p++) {
+            if (navBtns[p].getAttribute("data-match") === match)
+              navBtns[p].classList.add("is-active");
+            else navBtns[p].classList.remove("is-active");
+          }
+        }
+        if (path.indexOf("/docs") === 0) {
+          setByMatch("docs");
+        } else if (path === "/" || path === "") {
+          if (window.pageYOffset < 200) setByMatch("home");
+          window.addEventListener("scroll", function () {
+            if (window.pageYOffset < 200) setByMatch("home");
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

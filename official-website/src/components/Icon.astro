@@ -1,0 +1,53 @@
+---
+// Fluent UI System Icons (Microsoft) - the distributable successor to
+// Win8/8.1 Segoe UI Symbol app bar glyphs. MIT licensed.
+// Icons are filled (use fill: currentColor), imported as raw SVG strings.
+import home from "../icons/fluent/home_24_regular.svg?raw";
+import grid from "../icons/fluent/grid_24_regular.svg?raw";
+import tilehome from "../icons/fluent/apps_24_regular.svg?raw";
+import star from "../icons/fluent/star_24_regular.svg?raw";
+import code from "../icons/fluent/code_24_regular.svg?raw";
+import device from "../icons/fluent/desktop_24_regular.svg?raw";
+import tablet from "../icons/fluent/tablet_24_regular.svg?raw";
+import phone from "../icons/fluent/phone_24_regular.svg?raw";
+import list from "../icons/fluent/list_24_regular.svg?raw";
+import download from "../icons/fluent/arrow_download_24_regular.svg?raw";
+import edit from "../icons/fluent/edit_24_regular.svg?raw";
+import eye from "../icons/fluent/eye_24_regular.svg?raw";
+import search from "../icons/fluent/search_24_regular.svg?raw";
+import exportfile from "../icons/fluent/arrow_export_up_24_regular.svg?raw";
+import parser from "../icons/fluent/document_24_regular.svg?raw";
+import math from "../icons/fluent/math_format_professional_24_regular.svg?raw";
+import webview from "../icons/fluent/window_24_regular.svg?raw";
+import diagram from "../icons/fluent/flowchart_24_regular.svg?raw";
+import ui from "../icons/fluent/apps_24_regular.svg?raw";
+import tabs from "../icons/fluent/tab_24_regular.svg?raw";
+import layers from "../icons/fluent/split_horizontal_24_regular.svg?raw";
+import sync from "../icons/fluent/arrow_sync_24_regular.svg?raw";
+import fullscreen from "../icons/fluent/full_screen_maximize_24_regular.svg?raw";
+import color from "../icons/fluent/color_24_regular.svg?raw";
+import save from "../icons/fluent/save_24_regular.svg?raw";
+import undo from "../icons/fluent/arrow_undo_24_regular.svg?raw";
+import settings from "../icons/fluent/settings_24_regular.svg?raw";
+import feedback from "../icons/fluent/person_feedback_24_regular.svg?raw";
+import external from "../icons/fluent/open_24_regular.svg?raw";
+
+const icons: Record<string, string> = {
+  home, grid, tilehome, star, code, device, tablet, phone, list, download,
+  edit, eye, search, exportfile, parser, math, webview, diagram, ui,
+  tabs, layers, sync, fullscreen, color, save, undo, settings, feedback,
+  external,
+  // alias: GitHub brand not in Fluent; reuse external/open glyph.
+  github: external,
+};
+
+interface Props {
+  name: string;
+  size?: number | string;
+}
+const { name, size = 24 } = Astro.props;
+const svg = icons[name] || "";
+const sz = typeof size === "number" ? `${size}px` : size;
+---
+
+<span class="icon" style={`width:${sz};height:${sz}`} set:html={svg} aria-hidden="true"></span>

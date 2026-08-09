@@ -1,0 +1,67 @@
+---
+import Icon from "./Icon.astro";
+const stats = [
+  { num: "3", label: "运行平台", color: "tile-cyan" },
+  { num: "13+", label: "功能特性", color: "tile-magenta" },
+  { num: "5", label: "渲染引擎", color: "tile-emerald" },
+  { num: "6", label: "AI 协作", color: "tile-amber" },
+];
+
+const strips = [
+  "Windows 8.1+",
+  "Windows RT 8.1+",
+  "Windows Phone 8.1+",
+  "IE11 WebView",
+  "MarkDig",
+  "KaTeX",
+  "Mermaid 7",
+  "highlight.js",
+];
+---
+
+<section class="hero">
+  <div class="hero-grid">
+    <div class="hero-main tile-hero">
+      <div class="hero-eyebrow">METRO &nbsp;·&nbsp; MARKDOWN &nbsp;·&nbsp; WINDOWS 8.1 ERA</div>
+      <h1 class="hero-title">Mark<span class="accent-cyan">::</span>Blocks</h1>
+      <p class="hero-sub">
+        为 Metro 而生的 Markdown 编辑器。<br />
+        纯扁平。纯磁贴。纯 Microsoft Design。
+      </p>
+      <div class="hero-cta">
+        <a href="#download" class="tile-btn tile-btn-accent">
+          <Icon name="download" size={18} />
+          <span>立即下载</span>
+        </a>
+        <a
+          href="https://github.com/A-BenLi06/MetroMarkdownEditor"
+          target="_blank"
+          rel="noopener"
+          class="tile-btn tile-btn-outline">
+          <Icon name="external" size={18} />
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="hero-side">
+      {
+        stats.map((s) => (
+          <div class={`tile ${s.color} hero-stat`}>
+            <div class="stat-num">{s.num}</div>
+            <div class="stat-label">{s.label}</div>
+            <span class="tile-brand" />
+          </div>
+        ))
+      }
+    </div>
+  </div>
+
+  <div class="hero-strip">
+    {
+      strips.map((s, i) => (
+        <div class={`strip-item ${i % 2 ? "strip-alt" : ""}`}>{s}</div>
+      ))
+    }
+  </div>
+</section>

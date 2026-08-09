@@ -9,6 +9,10 @@ namespace MetroMarkdownEditor.ViewModels
             Theme = new ThemeService();
             RecentFiles = new RecentFileService();
             Background = new BackgroundService();
+            MarkdownSettings = MarkdownSettingsService.Instance;
+            EditorSettings = EditorSettingsService.Instance;
+            ImageSettings = ImageSettingsService.Instance;
+            ExportSettings = ExportSettingsService.Instance;
             Editor = new EditorViewModel(Theme, RecentFiles);
             Main = new MainViewModel(RecentFiles);
         }
@@ -18,6 +22,14 @@ namespace MetroMarkdownEditor.ViewModels
         public RecentFileService RecentFiles { get; private set; }
 
         public BackgroundService Background { get; private set; }
+
+        public MarkdownSettingsService MarkdownSettings { get; private set; }
+
+        public EditorSettingsService EditorSettings { get; private set; }
+
+        public ImageSettingsService ImageSettings { get; private set; }
+
+        public ExportSettingsService ExportSettings { get; private set; }
 
         public MainViewModel Main { get; private set; }
 

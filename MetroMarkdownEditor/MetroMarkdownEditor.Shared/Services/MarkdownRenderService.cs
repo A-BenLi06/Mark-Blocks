@@ -1,11 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Windows.Storage; 
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Markdig;
+using Markdig.Extensions.AutoIdentifiers;
+using Markdig.Extensions.EmphasisExtras;
+using Markdig.Extensions.SmartyPants;
+using Markdig.Extensions.Tables;
+using Markdig.Renderers.Html;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
 
 namespace MetroMarkdownEditor.Services
 {
@@ -13,6 +22,20 @@ namespace MetroMarkdownEditor.Services
     {
         public string Html { get; set; }
         public IReadOnlyList<MarkdownBlock> Blocks { get; set; }
+        public IReadOnlyList<MarkdownOutlineItem> Outline { get; set; }
+    }
+
+    public class MarkdownOutlineItem
+    {
+        public string Title { get; set; }
+        public int Level { get; set; }
+        public int Line { get; set; }
+        public string AnchorId { get; set; }
+        public int BlockIndex { get; set; }
+        public Thickness Indent
+        {
+            get { return new Thickness(Math.Max(0, Level - 1) * 16, 0, 0, 0); }
+        }
     }
 
     public class MarkdownBlock
@@ -25,7 +48,8 @@ namespace MetroMarkdownEditor.Services
 
     public class MarkdownRenderService
     {
-        private readonly MarkdownPipeline _pipeline;
+        private MarkdownPipeline _pipeline;
+        private string _pipelineSignature;
 
         private static string _cachedJs = null;
         private static string _cachedCssDark = null;
@@ -43,13 +67,91 @@ namespace MetroMarkdownEditor.Services
 
         public MarkdownRenderService()
         {
-            _pipeline = new MarkdownPipelineBuilder()
-                .UseAdvancedExtensions()
-                .UseSoftlineBreakAsHardlineBreak()
-                .UseEmojiAndSmiley()          // 表情符号 :smile:
-                .UseMathematics()              // LaTeX 数学公式
-                .UseDiagrams()                 // Mermaid 图表
-                .Build();
+            RebuildPipeline();
+        }
+
+        private MarkdownPipeline GetPipeline()
+        {
+            var signature = MarkdownSettingsService.Instance.BuildSignature() + "|" + EditorSettingsService.Instance.EnableEmojiAutocomplete;
+            if (_pipeline == null || _pipelineSignature != signature)
+            {
+                RebuildPipeline();
+            }
+
+            return _pipeline;
+        }
+
+        private void RebuildPipeline()
+        {
+            var markdownSettings = MarkdownSettingsService.Instance;
+            var editorSettings = EditorSettingsService.Instance;
+            var builder = new MarkdownPipelineBuilder();
+
+            if (!markdownSettings.StrictMode)
+            {
+                builder.UseAbbreviations();
+                builder.UseCitations();
+                builder.UseCustomContainers();
+                builder.UseDefinitionLists();
+                builder.UseFigures();
+                builder.UseFooters();
+                builder.UseFootnotes();
+                builder.UseGridTables();
+                builder.UseListExtras();
+                builder.UseGenericAttributes();
+                builder.UseYamlFrontMatter();
+            }
+
+            builder.UsePipeTables(new PipeTableOptions());
+            builder.UseTaskLists();
+            builder.UseAutoIdentifiers(AutoIdentifierOptions.GitHub);
+            builder.UseEmphasisExtras(BuildEmphasisOptions(markdownSettings));
+
+            if (markdownSettings.AutoLinks)
+            {
+                builder.UseAutoLinks();
+            }
+
+            if (editorSettings.EnableEmojiAutocomplete)
+            {
+                builder.UseEmojiAndSmiley();
+            }
+
+            if (markdownSettings.ShouldUseMathematics)
+            {
+                builder.UseMathematics();
+                if (!markdownSettings.InlineMath)
+                {
+                    builder.InlineParsers.RemoveAll(p => p.GetType().Name == "MathInlineParser");
+                }
+            }
+
+            if (markdownSettings.Diagrams)
+            {
+                builder.UseDiagrams();
+            }
+
+            if (markdownSettings.ShouldUseSmartyPants)
+            {
+                builder.UseSmartyPants(new SmartyPantOptions());
+            }
+
+            if (markdownSettings.ShouldUseSoftlineBreakAsHardlineBreak)
+            {
+                builder.UseSoftlineBreakAsHardlineBreak();
+            }
+
+            _pipeline = builder.Build();
+            _pipelineSignature = markdownSettings.BuildSignature() + "|" + editorSettings.EnableEmojiAutocomplete;
+        }
+
+        private static EmphasisExtraOptions BuildEmphasisOptions(MarkdownSettingsService settings)
+        {
+            var options = EmphasisExtraOptions.Strikethrough;
+            if (settings.Subscript) options |= EmphasisExtraOptions.Subscript;
+            if (settings.Superscript) options |= EmphasisExtraOptions.Superscript;
+            if (settings.Highlight) options |= EmphasisExtraOptions.Marked;
+            return options;
         }
 
         private async Task<string> ReadAssetFileAsync(string path)
@@ -103,11 +205,14 @@ namespace MetroMarkdownEditor.Services
                 _cachedMermaidJs = await ReadAssetFileAsync("Assets/Mermaid/mermaid7.min.js"); // 确保这里是 v7 版本
 
             string currentCssContent = (theme == ElementTheme.Dark) ? _cachedCssDark : _cachedCssLight;
+            var markdownSettings = MarkdownSettingsService.Instance;
 
             // 颜色变量
             var bodyColor = theme == ElementTheme.Dark ? "#e6e6e6" : "#24292f";
             var bgColor = theme == ElementTheme.Dark ? "#1e1e1e" : "#ffffff";
             var borderColor = "#dfe2e5"; 
+            var codeWhiteSpace = markdownSettings.AutoWrapLongLines ? "pre-wrap" : "pre";
+            var codeWordBreak = markdownSettings.AutoWrapLongLines ? "break-word" : "normal";
 
             // 字号配置
             string baseFontSize = "20px";
@@ -178,7 +283,23 @@ namespace MetroMarkdownEditor.Services
             sb.Append("img { max-width: 100%; height: auto; display: block; margin: 10px 0; border-radius: 4px; }");
             sb.Append("pre { margin: 1em 0; padding: 0; text-align: left; }");
             sb.Append($"code {{ font-family: 'Consolas', 'Courier New', monospace; font-size: {codeFontSize}; }}");
-            sb.Append(".hljs { border-radius: 0; padding: 0.8em; overflow-x: auto; display: block; }");
+            sb.Append(".hljs { border-radius: 0; padding: 0.8em; overflow-x: auto; display: block; white-space: " + codeWhiteSpace + "; word-break: " + codeWordBreak + "; }");
+            sb.Append("pre code { white-space: " + codeWhiteSpace + "; word-break: " + codeWordBreak + "; }");
+            if (markdownSettings.DisplayLineNumbersForCodeFences)
+            {
+                sb.Append("pre.line-numbered code { display: table; width: 100%; counter-reset: code-line; }");
+                sb.Append("pre.line-numbered .code-line { display: table-row; }");
+                sb.Append("pre.line-numbered .line-no { display: table-cell; width: 3em; padding-right: 1em; text-align: right; color: #8b949e; user-select: none; opacity: .7; }");
+                sb.Append("pre.line-numbered .line-code { display: table-cell; }");
+            }
+            if (markdownSettings.IndentFirstLineOfParagraphs)
+            {
+                sb.Append("p { text-indent: 2em; }");
+            }
+            if (markdownSettings.VisibleLineBreaks)
+            {
+                sb.Append("br:after { content: '\\21B5'; color: #8b949e; opacity: .7; font-size: .85em; }");
+            }
 
             // 表格与引用
             sb.Append(".table-wrapper { overflow-x: auto; margin: 16px 0; border: none; }");
@@ -187,8 +308,12 @@ namespace MetroMarkdownEditor.Services
             sb.Append("th { border-bottom: 1px solid " + borderColor + "; font-weight: 600; text-align: left; }");
             sb.Append("tr:nth-child(2n) { background-color: rgba(127,127,127,0.1); }");
             sb.Append("blockquote { border-left: 4px solid " + borderColor + "; padding: 0 1em; color: #6a737d; margin: 10px 0; }");
+            sb.Append(".alert { padding: .65em 1em; border-radius: 4px; }");
+            sb.Append(".alert-title { margin: 0 0 .35em 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0; }");
             sb.Append(".alert-note { border-left-color: #0969da; background-color: rgba(9, 105, 218, 0.1); color: inherit; }");
+            sb.Append(".alert-tip, .alert-important { border-left-color: #1a7f37; background-color: rgba(26, 127, 55, 0.1); color: inherit; }");
             sb.Append(".alert-warning { border-left-color: #9a6700; background-color: rgba(154, 103, 0, 0.1); color: inherit; }");
+            sb.Append(".alert-caution { border-left-color: #cf222e; background-color: rgba(207, 34, 46, 0.1); color: inherit; }");
             sb.Append(".code-lang-label { position: absolute; top: 0; right: 0; padding: 4px 8px; font-family: 'Segoe UI', sans-serif; font-size: 11px; color: #abb2bf; background-color: rgba(0,0,0,0.3); border-bottom-left-radius: 4px; text-transform: lowercase; user-select: none; }");
             sb.Append(".math { overflow-x: auto; }");
 
@@ -519,6 +644,26 @@ namespace MetroMarkdownEditor.Services
             sb.Append("<script>" + _cachedKatexAutoRender + "</script>");
             sb.Append("<script>" + _cachedJs + "</script>");
 
+            // Stable native scroll entry point; avoids allocating eval scripts during scroll sync.
+            sb.Append(@"<script>
+                window.__mdScrollToRatio = function(ratioText) {
+                    var ratio = parseFloat(ratioText);
+                    if (isNaN(ratio)) ratio = 0;
+                    if (ratio < 0) ratio = 0;
+                    if (ratio > 1) ratio = 1;
+
+                    var doc = document.documentElement || document.body;
+                    var body = document.body;
+                    var scrollHeight = Math.max(
+                        (doc && doc.scrollHeight) || 0,
+                        (body && body.scrollHeight) || 0
+                    );
+                    var max = scrollHeight - (window.innerHeight || 0);
+                    if (max < 0) max = 0;
+                    window.scrollTo(0, max * ratio);
+                };
+            </script>");
+
             // === 4. Mermaid 初始化 (v7 专用配置) ===
             sb.Append(@"<script>
                 if (typeof mermaid !== 'undefined') {
@@ -577,34 +722,60 @@ namespace MetroMarkdownEditor.Services
         public MarkdownRenderResult RenderMarkdown(string markdown)
         {
             var normalized = NormalizeNewLines(markdown ?? string.Empty);
-            var blocks = SplitIntoBlocks(normalized);
-            var html = BuildHtmlFromBlocks(blocks);
-            return new MarkdownRenderResult { Html = html, Blocks = blocks };
+            IReadOnlyList<MarkdownBlock> blocks;
+            string html;
+
+            if (normalized.Length == 0)
+            {
+                blocks = new List<MarkdownBlock>();
+                html = string.Empty;
+            }
+            else
+            {
+                // Preserve document-wide Markdown semantics. Reference links,
+                // footnotes and loose lists can span blank lines and must not be
+                // parsed as independent fragments.
+                var lineCount = 1;
+                for (var i = 0; i < normalized.Length; i++)
+                {
+                    if (normalized[i] == '\n') lineCount++;
+                }
+
+                var block = new MarkdownBlock
+                {
+                    Index = 0,
+                    StartLine = 0,
+                    EndLine = Math.Max(0, lineCount - 1),
+                    Text = normalized
+                };
+                blocks = new List<MarkdownBlock> { block };
+                html = BuildBlockHtml(block);
+            }
+
+            var outline = ExtractOutline(normalized, blocks);
+            return new MarkdownRenderResult { Html = html, Blocks = blocks, Outline = outline };
         }
 
         // UpdateContentAsync：针对 Mermaid v7 简化渲染逻辑
         public async Task UpdateContentAsync(WebView webView, string content, bool isMarkdown = true)
         {
             if (webView == null) return;
-            string html = isMarkdown ? Markdown.ToHtml(content ?? string.Empty, _pipeline) : (content ?? string.Empty);
+
+            var html = isMarkdown
+                ? EnhanceHtmlFragment(Markdown.ToHtml(content ?? string.Empty, GetPipeline()))
+                : (content ?? string.Empty);
             var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(html));
             var script = new StringBuilder();
-            
+
             script.Append("(function(){");
             script.Append("  var container = document.getElementById('content');");
             script.Append("  if (!container) return;");
-            
-            // 恢复滚动位置
             script.Append("  var doc = document.documentElement; var body = document.body;");
             script.Append("  var scrollTop = (doc && doc.scrollTop) || (body && body.scrollTop);");
-            
-            // 更新 HTML
             script.Append("  container.style.minHeight = container.clientHeight + 'px';");
             script.Append("  try {");
             script.Append("    container.innerHTML = decodeURIComponent(escape(window.atob('").Append(payload).Append("')));");
             script.Append("  } catch(e) { console.error('Base64 decode failed'); }");
-
-            // 表格容器处理
             script.Append("  var tables = container.getElementsByTagName('table');");
             script.Append("  for (var i = tables.length - 1; i >= 0; i--) {");
             script.Append("    var table = tables[i];");
@@ -614,305 +785,20 @@ namespace MetroMarkdownEditor.Services
             script.Append("    }");
             script.Append("  }");
 
-            // KaTeX 渲染
             AppendFragmentEnhancements(script, "container");
             AppendVisibleBlockProcessing(script, "container", true);
             script.Append("  if(doc) doc.scrollTop = scrollTop;");
             script.Append("  if(body) body.scrollTop = scrollTop;");
             script.Append("  container.style.minHeight = '';");
-            script.Append("  return;");
-            script.Append("  if (typeof katex !== 'undefined') {");
-            script.Append("    var mathElements = container.querySelectorAll('.math');");
-            script.Append("    for (var i = 0; i < mathElements.length; i++) {");
-            script.Append("      var el = mathElements[i];");
-            script.Append("      if (el.getAttribute('data-rendered')) continue;");
-            script.Append("      var tex = el.textContent || el.innerText;");
-            script.Append("      var displayMode = el.tagName === 'DIV';");
-            script.Append("      try { katex.render(tex, el, { displayMode: displayMode, throwOnError: false }); el.setAttribute('data-rendered', 'true'); } catch(e) {}");
-            script.Append("    }");
-            script.Append("  }");
-
-            // Highlight.js
-            script.Append("  if (typeof hljs !== 'undefined') {");
-            script.Append("    var blocks = container.querySelectorAll('pre code');");
-            script.Append("    for(var i=0; i<blocks.length; i++){ hljs.highlightBlock(blocks[i]); }");
-            script.Append("  }");
-
-            // -----------------------------------------------------------
-            // Mermaid v7 渲染逻辑 (带语法兼容层)
-            // -----------------------------------------------------------
-            script.Append("  if (typeof mermaid !== 'undefined') {");
-            // 1. 查找并转换所有 mermaid 代码块为 div
-            script.Append("    var codeBlocks = container.querySelectorAll('code.language-mermaid, pre.mermaid code, div.mermaid');");
-            script.Append("    var nodesToInit = [];");
-            script.Append("    for (var m = 0; m < codeBlocks.length; m++) {");
-            script.Append("      var block = codeBlocks[m];");
-            // 【过滤】跳过属于其他库的语法（flow, sequence）
-            script.Append("      if (block.className && (block.className.indexOf('language-flow') !== -1 || block.className.indexOf('language-sequence') !== -1)) {");
-            script.Append("        continue;");
-            script.Append("      }");
-            // 如果已经是处理过的 div，直接加入列表；如果是 code，转换它
-            script.Append("      if (block.tagName.toLowerCase() === 'div' && block.className === 'mermaid') {");
-            script.Append("          if(!block.getAttribute('data-processed')) nodesToInit.push(block);");
-            script.Append("      } else {");
-            script.Append("          var graphDef = block.innerText || block.textContent;");
-            // 【关键】v7 兼容性：将 'flowchart' 替换为 'graph'
-            script.Append("          graphDef = graphDef.replace(/^\\s*flowchart\\s+/m, 'graph ');");
-            script.Append("          var newDiv = document.createElement('div');");
-            script.Append("          newDiv.className = 'mermaid';");
-            script.Append("          newDiv.textContent = graphDef;");
-            script.Append("          var parentPre = block.parentNode;");
-            script.Append("          if (parentPre && parentPre.tagName.toLowerCase() === 'pre') {");
-            script.Append("            parentPre.parentNode.replaceChild(newDiv, parentPre);");
-            script.Append("          } else {");
-            script.Append("            block.parentNode.replaceChild(newDiv, block);");
-            script.Append("          }");
-            script.Append("          nodesToInit.push(newDiv);");
-            script.Append("      }");
-            script.Append("    }");
-
-            // 2. 调用 mermaid.init() - 使用延迟等待 SVG 生成
-            script.Append("    if (nodesToInit.length > 0) {");
-
-#if !WINDOWS_PHONE_APP
-            // Windows: Add debug output if enabled in DevSettings
-            bool showMermaidDebug = DevSettingsService.Instance.MermaidDebugEnabled;
-            if (showMermaidDebug)
-            {
-                script.Append("      var initDebug = document.createElement('div');");
-                script.Append("      initDebug.style.cssText = 'background:#333;color:#ff0;padding:10px;font-family:monospace;font-size:12px;margin-bottom:10px;';");
-                script.Append("      initDebug.textContent = '[Mermaid Init] nodesToInit.length=' + nodesToInit.length;");
-                script.Append("      container.insertBefore(initDebug, container.firstChild);");
-            }
-#endif
-
-            script.Append("      setTimeout(function() {");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("        var initErrors = [];");
-            }
-#endif
-
-            script.Append("        for (var ni = 0; ni < nodesToInit.length; ni++) {");
-            script.Append("          var node = nodesToInit[ni];");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("          var graphDef = node.textContent || node.innerText || '';");
-                script.Append("          var graphType = 'unknown';");
-                script.Append("          if (graphDef.indexOf('gantt') !== -1) graphType = 'gantt';");
-                script.Append("          else if (graphDef.indexOf('sequenceDiagram') !== -1) graphType = 'sequence';");
-                script.Append("          else if (graphDef.indexOf('graph') !== -1 || graphDef.indexOf('flowchart') !== -1) graphType = 'flowchart';");
-                script.Append("          try {");
-                script.Append("            mermaid.init(undefined, node);");
-                script.Append("          } catch(e) {");
-                script.Append("            initErrors.push({ idx: ni, type: graphType, error: e.message, preview: graphDef.substring(0, 100) });");
-                script.Append("            var errDiv = document.createElement('div');");
-                script.Append("            errDiv.style.cssText = 'background:#f44;color:#fff;padding:10px;font-size:12px;margin:5px 0;';");
-                script.Append("            errDiv.textContent = 'Mermaid Error [' + graphType + ']: ' + e.message;");
-                script.Append("            node.parentNode.insertBefore(errDiv, node);");
-                script.Append("          }");
-            }
-            else
-            {
-                script.Append("          try { mermaid.init(undefined, node); } catch(e) {}");
-            }
-#else
-            script.Append("          try { mermaid.init(undefined, node); } catch(e) {}");
-#endif
-
-            script.Append("        }");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("        if (initErrors.length > 0) {");
-                script.Append("          initDebug.textContent += ' | ERRORS: ' + JSON.stringify(initErrors);");
-                script.Append("        } else {");
-                script.Append("          initDebug.textContent += ' | init() called for ' + nodesToInit.length + ' nodes';");
-                script.Append("        }");
-            }
-#endif
-            
-            // 延迟处理 SVG 尺寸
-            script.Append("        var pollCount = 0;");
-            script.Append("        var pollInterval = setInterval(function() {");
-            script.Append("          pollCount++;");
-            script.Append("          var svgs = container.querySelectorAll('.mermaid svg');");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("          var allMermaids = container.querySelectorAll('.mermaid');");
-                script.Append("          initDebug.textContent = '[Mermaid Poll #' + pollCount + '] .mermaid divs=' + allMermaids.length + ', SVGs=' + svgs.length;");
-            }
-#endif
-
-            script.Append("          if (svgs.length > 0 || pollCount >= 10) {");
-            script.Append("            clearInterval(pollInterval);");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("            initDebug.textContent += ' [Done] Found ' + svgs.length + ' SVGs after ' + pollCount + ' polls';");
-                script.Append("            var debugInfo = [];");
-            }
-#endif
-            
-            // 处理 SVG 尺寸
-            script.Append("            for(var s=0; s<svgs.length; s++) {");
-            script.Append("              var svg = svgs[s];");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("              var logEntry = {idx: s};");
-            }
-#endif
-
-            script.Append("              var origViewBox = svg.getAttribute('viewBox');");
-            script.Append("              var origW = svg.getAttribute('width');");
-            script.Append("              var origH = svg.getAttribute('height');");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("              logEntry.origViewBox = origViewBox;");
-                script.Append("              logEntry.origW = origW; logEntry.origH = origH;");
-            }
-#endif
-
-            script.Append("              var origViewBoxParts = origViewBox ? origViewBox.split(' ') : [];");
-            script.Append("              var vbW = 0, vbH = 0;");
-            script.Append("              if (origViewBoxParts.length === 4) {");
-            script.Append("                vbW = parseFloat(origViewBoxParts[2]);");
-            script.Append("                vbH = parseFloat(origViewBoxParts[3]);");
-            script.Append("              }");
-            script.Append("              if (!vbW || !vbH) {");
-            script.Append("                if (origW && origH && (origW+'').indexOf('%') === -1) {");
-            script.Append("                  vbW = parseFloat(origW);");
-            script.Append("                  vbH = parseFloat(origH);");
-            script.Append("                }");
-            script.Append("              }");
-            script.Append("              if (!vbW || !vbH) {");
-            script.Append("                try {");
-            script.Append("                  var bbox = svg.getBBox();");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("                  logEntry.bboxResult = { x: bbox.x, y: bbox.y, w: bbox.width, h: bbox.height };");
-            }
-#endif
-
-            script.Append("                  if (bbox && bbox.width > 0 && bbox.height > 0) {");
-            script.Append("                    vbW = bbox.width; vbH = bbox.height;");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("                    logEntry.bboxFallback = true;");
-            }
-#endif
-
-            script.Append("                    svg.setAttribute('viewBox', bbox.x + ' ' + bbox.y + ' ' + bbox.width + ' ' + bbox.height);");
-            script.Append("                  }");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("                } catch(e) { logEntry.bboxError = e.message; }");
-            }
-            else
-            {
-                script.Append("                } catch(e) {}");
-            }
-#else
-            script.Append("                } catch(e) {}");
-#endif
-
-            script.Append("              }");
-            script.Append("              if (!vbW || !vbH) {");
-            script.Append("                var mDiv = svg.parentNode;");
-            script.Append("                var defaultW = mDiv ? mDiv.clientWidth - 40 : 600;");
-            script.Append("                if (defaultW <= 0) defaultW = 600;");
-            script.Append("                var defaultH = 400;");
-            script.Append("                svg.style.cssText = 'width: ' + defaultW + 'px !important; height: ' + defaultH + 'px !important; max-width: none !important;';");
-            script.Append("                svg.setAttribute('width', defaultW);");
-            script.Append("                svg.setAttribute('height', defaultH);");
-            script.Append("                if (!svg.getAttribute('viewBox')) svg.setAttribute('viewBox', '0 0 ' + defaultW + ' ' + defaultH);");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("                logEntry.defaultFallback = true;");
-                script.Append("                logEntry.appliedW = defaultW;");
-                script.Append("                logEntry.appliedH = defaultH;");
-            }
-#endif
-
-            script.Append("              }");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("              logEntry.vbW = vbW; logEntry.vbH = vbH;");
-            }
-#endif
-
-            script.Append("              if (vbW > 0 && vbH > 0) {");
-            script.Append("                var mDiv = svg.parentNode;");
-            script.Append("                var containerW = mDiv ? mDiv.clientWidth : 600;");
-            script.Append("                if (containerW <= 0) containerW = 600;");
-            script.Append("                var maxAllowedW = containerW - 40;");
-            script.Append("                var aspectRatio = vbH / vbW;");
-            script.Append("                var finalW = Math.min(vbW, maxAllowedW);");
-            script.Append("                var finalH = finalW * aspectRatio;");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("                logEntry.containerW = containerW; logEntry.maxAllowedW = maxAllowedW; logEntry.finalW = finalW; logEntry.finalH = finalH;");
-            }
-#endif
-
-            script.Append("                svg.style.cssText = 'width: ' + finalW + 'px !important; height: ' + finalH + 'px !important; max-width: none !important;';");
-            script.Append("                svg.setAttribute('width', finalW);");
-            script.Append("                svg.setAttribute('height', finalH);");
-            script.Append("              }");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("              debugInfo.push(logEntry);");
-            }
-#endif
-
-            script.Append("            }");
-
-#if !WINDOWS_PHONE_APP
-            if (showMermaidDebug)
-            {
-                script.Append("            initDebug.textContent += ' [SVG Info] ' + JSON.stringify(debugInfo);");
-            }
-#endif
-
-            script.Append("          }");
-            script.Append("        }, 200);");
-            script.Append("      }, 50);");
-            script.Append("    }");
-            script.Append("  }");
-            // -----------------------------------------------------------
-
-            script.Append("  if(doc) doc.scrollTop = scrollTop;");
-            script.Append("  if(body) body.scrollTop = scrollTop;");
-            script.Append("  container.style.minHeight = '';");
             script.Append("})();");
-            
-            try { await webView.InvokeScriptAsync("eval", new[] { script.ToString() }); } catch { }
+
+            try
+            {
+                await webView.InvokeScriptAsync("eval", new[] { script.ToString() });
+            }
+            catch
+            {
+            }
         }
 
         // ... UpdateBlockAsync 等辅助方法保持原样 (如果你需要我也改 UpdateBlockAsync 请告诉我，逻辑同上) ...
@@ -953,7 +839,231 @@ namespace MetroMarkdownEditor.Services
             try { await webView.InvokeScriptAsync("eval", new[] { script.ToString() }); } catch { }
         }
 
-        public string ToHtml(string markdown) => Markdig.Markdown.ToHtml(markdown ?? string.Empty, _pipeline);
+        public string ToHtml(string markdown) => Markdig.Markdown.ToHtml(markdown ?? string.Empty, GetPipeline());
+
+        private IReadOnlyList<MarkdownOutlineItem> ExtractOutline(string markdown, IReadOnlyList<MarkdownBlock> blocks)
+        {
+            var outline = new List<MarkdownOutlineItem>();
+            try
+            {
+                var document = Markdown.Parse(markdown ?? string.Empty, GetPipeline());
+                var slugCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var heading in document.Descendants<HeadingBlock>())
+                {
+                    var title = ExtractInlineText(heading.Inline).Trim();
+                    if (string.IsNullOrWhiteSpace(title))
+                    {
+                        continue;
+                    }
+
+                    var anchor = GetHeadingAnchor(heading, title, slugCounts);
+                    outline.Add(new MarkdownOutlineItem
+                    {
+                        Title = title,
+                        Level = heading.Level,
+                        Line = Math.Max(0, heading.Line),
+                        AnchorId = anchor,
+                        BlockIndex = FindBlockIndexForLine(blocks, Math.Max(0, heading.Line))
+                    });
+                }
+            }
+            catch
+            {
+                outline.Clear();
+            }
+
+            if (outline.Count == 0)
+            {
+                outline.AddRange(ExtractOutlineFallback(markdown, blocks));
+            }
+
+            return outline;
+        }
+
+        private static string ExtractInlineText(ContainerInline container)
+        {
+            if (container == null)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder();
+            foreach (var inline in container)
+            {
+                AppendInlineText(sb, inline);
+            }
+            return sb.ToString();
+        }
+
+        private static void AppendInlineText(StringBuilder sb, Inline inline)
+        {
+            if (inline == null)
+            {
+                return;
+            }
+
+            var literal = inline as LiteralInline;
+            if (literal != null)
+            {
+                sb.Append(literal.Content.ToString());
+                return;
+            }
+
+            var code = inline as CodeInline;
+            if (code != null)
+            {
+                sb.Append(code.Content);
+                return;
+            }
+
+            var lineBreak = inline as LineBreakInline;
+            if (lineBreak != null)
+            {
+                sb.Append(" ");
+                return;
+            }
+
+            var container = inline as ContainerInline;
+            if (container != null)
+            {
+                foreach (var child in container)
+                {
+                    AppendInlineText(sb, child);
+                }
+            }
+        }
+
+        private static string GetHeadingAnchor(HeadingBlock heading, string title, IDictionary<string, int> slugCounts)
+        {
+            try
+            {
+                var attributes = heading.GetAttributes();
+                if (attributes != null && !string.IsNullOrWhiteSpace(attributes.Id))
+                {
+                    return attributes.Id;
+                }
+            }
+            catch
+            {
+            }
+
+            return BuildGithubLikeSlug(title, slugCounts);
+        }
+
+        private static string BuildGithubLikeSlug(string title, IDictionary<string, int> slugCounts)
+        {
+            var sb = new StringBuilder();
+            bool previousDash = false;
+            var lower = (title ?? string.Empty).Trim().ToLowerInvariant();
+
+            foreach (var c in lower)
+            {
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                {
+                    sb.Append(c);
+                    previousDash = c == '-';
+                }
+                else if (char.IsWhiteSpace(c))
+                {
+                    if (!previousDash && sb.Length > 0)
+                    {
+                        sb.Append('-');
+                        previousDash = true;
+                    }
+                }
+            }
+
+            var slug = sb.ToString().Trim('-');
+            if (string.IsNullOrEmpty(slug))
+            {
+                slug = "section";
+            }
+
+            int count;
+            if (!slugCounts.TryGetValue(slug, out count))
+            {
+                slugCounts[slug] = 1;
+                return slug;
+            }
+
+            slugCounts[slug] = count + 1;
+            return slug + "-" + count.ToString();
+        }
+
+        private static int FindBlockIndexForLine(IReadOnlyList<MarkdownBlock> blocks, int line)
+        {
+            if (blocks == null)
+            {
+                return -1;
+            }
+
+            foreach (var block in blocks)
+            {
+                if (block.StartLine <= line && line <= block.EndLine)
+                {
+                    return block.Index;
+                }
+            }
+
+            return -1;
+        }
+
+        private static IEnumerable<MarkdownOutlineItem> ExtractOutlineFallback(string markdown, IReadOnlyList<MarkdownBlock> blocks)
+        {
+            var result = new List<MarkdownOutlineItem>();
+            var lines = NormalizeNewLines(markdown).Split('\n');
+            var slugCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            bool inFence = false;
+            string fenceMarker = null;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i] ?? string.Empty;
+                var trimmed = line.TrimStart();
+                if (trimmed.StartsWith("```") || trimmed.StartsWith("~~~"))
+                {
+                    if (!inFence)
+                    {
+                        inFence = true;
+                        fenceMarker = trimmed.Substring(0, 3);
+                    }
+                    else if (!string.IsNullOrEmpty(fenceMarker) && trimmed.StartsWith(fenceMarker))
+                    {
+                        inFence = false;
+                        fenceMarker = null;
+                    }
+                    continue;
+                }
+
+                if (inFence)
+                {
+                    continue;
+                }
+
+                var match = Regex.Match(line, @"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$");
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                var title = Regex.Replace(match.Groups[2].Value, @"[`*_~\[\]\(\)!]", string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    continue;
+                }
+
+                result.Add(new MarkdownOutlineItem
+                {
+                    Title = title,
+                    Level = match.Groups[1].Value.Length,
+                    Line = i,
+                    AnchorId = BuildGithubLikeSlug(title, slugCounts),
+                    BlockIndex = FindBlockIndexForLine(blocks, i)
+                });
+            }
+
+            return result;
+        }
 
         private void AppendFragmentEnhancements(StringBuilder script, string scopeVariable)
         {
@@ -1049,6 +1159,7 @@ namespace MetroMarkdownEditor.Services
             script.Append("        code.setAttribute('data-hljs-ready', 'true');");
             script.Append("      }");
             script.Append("    }");
+            script.Append("    if (window.__mdEnhanceCodeFences) window.__mdEnhanceCodeFences(block);");
             script.Append("    if (typeof mermaid !== 'undefined') {");
             script.Append("      var mermaidTargets = block.querySelectorAll('code.language-mermaid, pre.mermaid code, div.mermaid');");
             script.Append("      var nodesToInit = [];");
@@ -1150,6 +1261,33 @@ namespace MetroMarkdownEditor.Services
             script.Append("  }");
 
             script.Append("  window.__mdProcessVisibleImages(").Append(scopeVariable).Append(");");
+
+            var showCodeLineNumbers = MarkdownSettingsService.Instance.DisplayLineNumbersForCodeFences ? "true" : "false";
+            script.Append("  window.__mdEnhanceCodeFences = function(root) {");
+            script.Append("    var host = root || document.getElementById('content');");
+            script.Append("    if (!host || !host.querySelectorAll) return;");
+            script.Append("    var codes = host.querySelectorAll('pre code');");
+            script.Append("    for (var codeIndex = 0; codeIndex < codes.length; codeIndex++) {");
+            script.Append("      var code = codes[codeIndex];");
+            script.Append("      var pre = code.parentNode;");
+            script.Append("      if (!pre) continue;");
+            script.Append("      if (").Append(showCodeLineNumbers).Append(") {");
+            script.Append("        if (code.getAttribute('data-line-numbered') === 'true') continue;");
+            script.Append("        var html = code.innerHTML || '';");
+            script.Append("        var lines = html.replace(/\\n$/, '').split('\\n');");
+            script.Append("        var out = '';");
+            script.Append("        for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {");
+            script.Append("          out += '<span class=\"code-line\"><span class=\"line-no\">' + (lineIndex + 1) + '</span><span class=\"line-code\">' + lines[lineIndex] + '</span></span>';");
+            script.Append("        }");
+            script.Append("        pre.className = (pre.className ? pre.className + ' ' : '') + 'line-numbered';");
+            script.Append("        code.innerHTML = out;");
+            script.Append("        code.setAttribute('data-line-numbered', 'true');");
+            script.Append("      } else {");
+            script.Append("        pre.className = (pre.className || '').replace(/\\bline-numbered\\b/g, '');");
+            script.Append("      }");
+            script.Append("    }");
+            script.Append("  };");
+
             script.Append("  if (window.__mdProcessVisibleBlocks(").Append(scopeVariable).Append(", window.__mdBlockBudget) >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(").Append(scopeVariable).Append(");");
 
             if (includeDeferredPass)
@@ -1189,7 +1327,68 @@ namespace MetroMarkdownEditor.Services
                 return string.Empty;
             }
 
-            return System.Text.RegularExpressions.Regex.Replace(html, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", "<img loading=\"lazy\" decoding=\"async\" data-src=\"$2\" data-placeholder-src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\"$1$3>");
+            var settings = MarkdownSettingsService.Instance;
+            var enhanced = html;
+
+            if (settings.GithubStyleAlert)
+            {
+                enhanced = EnhanceGithubAlerts(enhanced);
+            }
+
+            enhanced = ApplyDefaultCodeLanguage(enhanced, settings);
+
+            return Regex.Replace(enhanced, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", m =>
+            {
+                var before = m.Groups[1].Value;
+                var src = m.Groups[2].Value;
+                var after = m.Groups[3].Value;
+                return "<img" + before + " loading=\"lazy\" decoding=\"async\" data-src=\"" + src + "\" data-placeholder-src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\"" + after + ">";
+            });
+        }
+
+        private static string EnhanceGithubAlerts(string html)
+        {
+            return Regex.Replace(
+                html,
+                "<blockquote>\\s*<p>\\s*\\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\]\\s*(.*?)</p>",
+                m =>
+                {
+                    var kind = m.Groups[1].Value.ToLowerInvariant();
+                    var title = m.Groups[1].Value.ToUpperInvariant();
+                    var rest = m.Groups[2].Value;
+                    return "<blockquote class=\"alert alert-" + kind + "\"><p class=\"alert-title\">" + title + "</p>" + (string.IsNullOrWhiteSpace(rest) ? string.Empty : "<p>" + rest + "</p>");
+                },
+                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        }
+
+        private static string ApplyDefaultCodeLanguage(string html, MarkdownSettingsService settings)
+        {
+            if (settings.ApplyDefaultCodeLanguageWhen == DefaultCodeLanguageApplyMode.WhenAddCodeFencesViaMenubar)
+            {
+                return html;
+            }
+
+            var language = SanitizeCodeLanguage(settings.DefaultCodeLanguage);
+            if (string.IsNullOrEmpty(language))
+            {
+                return html;
+            }
+
+            return Regex.Replace(html, "<pre><code(?![^>]*class=)([^>]*)>", "<pre><code class=\"language-" + language + "\"$1>", RegexOptions.IgnoreCase);
+        }
+
+        private static string SanitizeCodeLanguage(string language)
+        {
+            if (string.IsNullOrWhiteSpace(language)) return string.Empty;
+            var sb = new StringBuilder();
+            foreach (var c in language.Trim())
+            {
+                if (char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '+' || c == '#')
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString();
         }
 
         private static string NormalizeNewLines(string value) => (value ?? string.Empty).Replace("\r\n", "\n");
@@ -1237,7 +1436,7 @@ namespace MetroMarkdownEditor.Services
 
         private string BuildBlockHtml(MarkdownBlock block)
         {
-            var inner = EnhanceHtmlFragment(Markdown.ToHtml(block.Text ?? string.Empty, _pipeline));
+            var inner = EnhanceHtmlFragment(Markdown.ToHtml(block.Text ?? string.Empty, GetPipeline()));
             var sb = new StringBuilder();
             sb.Append("<div class=\"md-block\" data-block=\"").Append(block.Index).Append("\" data-start=\"").Append(block.StartLine).Append("\" data-end=\"").Append(block.EndLine).Append("\">");
             sb.Append(inner);

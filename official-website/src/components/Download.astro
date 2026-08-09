@@ -1,0 +1,22 @@
+---
+import Icon from "./Icon.astro";
+// 3 download tiles: large(2x2) + tall + tall (gap-free on 4-col x 2-row).
+const downloads = [
+  { icon: "download", name: "源代码",   desc: "克隆仓库，使用 Visual Studio 编译。", color: "tile-cyan",    size: "tile-large", href: "https://github.com/A-BenLi06/MetroMarkdownEditor" },
+  { icon: "settings", name: "Releases", desc: "查看已发布的构建与版本。", color: "tile-magenta", size: "tile-tall",  href: "https://github.com/A-BenLi06/MetroMarkdownEditor/releases" },
+  { icon: "feedback", name: "反馈",     desc: "在 Issues 提交问题或建议。", color: "tile-teal",    size: "tile-tall",  href: "https://github.com/A-BenLi06/MetroMarkdownEditor/issues" },
+];
+---
+
+<div class="tile-grid">
+  {
+    downloads.map((d) => (
+      <a href={d.href} target="_blank" rel="noopener" class={`tile ${d.color} ${d.size} download is-link`}>
+        <div class="tile-icon"><Icon name={d.icon} size={d.size === "tile-large" ? 80 : 56} /></div>
+        <h3 class="download-name">{d.name}</h3>
+        <p class="download-desc">{d.desc}</p>
+        <span class="tile-brand" />
+      </a>
+    ))
+  }
+</div>
