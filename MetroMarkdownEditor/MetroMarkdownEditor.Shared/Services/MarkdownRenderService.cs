@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -12,6 +13,7 @@ using Markdig.Extensions.AutoIdentifiers;
 using Markdig.Extensions.EmphasisExtras;
 using Markdig.Extensions.SmartyPants;
 using Markdig.Extensions.Tables;
+using Markdig.Renderers;
 using Markdig.Renderers.Html;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
@@ -44,6 +46,7 @@ namespace MetroMarkdownEditor.Services
         public int StartLine { get; set; }
         public int EndLine { get; set; }
         public string Text { get; set; }
+        public string Html { get; set; }
     }
 
     public class MarkdownRenderService
@@ -722,37 +725,25 @@ namespace MetroMarkdownEditor.Services
         public MarkdownRenderResult RenderMarkdown(string markdown)
         {
             var normalized = NormalizeNewLines(markdown ?? string.Empty);
-            IReadOnlyList<MarkdownBlock> blocks;
-            string html;
-
             if (normalized.Length == 0)
             {
-                blocks = new List<MarkdownBlock>();
-                html = string.Empty;
-            }
-            else
-            {
-                // Preserve document-wide Markdown semantics. Reference links,
-                // footnotes and loose lists can span blank lines and must not be
-                // parsed as independent fragments.
-                var lineCount = 1;
-                for (var i = 0; i < normalized.Length; i++)
+                return new MarkdownRenderResult
                 {
-                    if (normalized[i] == '\n') lineCount++;
-                }
-
-                var block = new MarkdownBlock
-                {
-                    Index = 0,
-                    StartLine = 0,
-                    EndLine = Math.Max(0, lineCount - 1),
-                    Text = normalized
+                    Html = string.Empty,
+                    Blocks = new List<MarkdownBlock>(),
+                    Outline = new List<MarkdownOutlineItem>()
                 };
-                blocks = new List<MarkdownBlock> { block };
-                html = BuildBlockHtml(block);
             }
 
-            var outline = ExtractOutline(normalized, blocks);
+            // Parse once for the whole document so reference links, footnotes and
+            // loose lists retain document-wide semantics. Rendering the already
+            // resolved top-level AST nodes separately gives the WebView stable DOM
+            // blocks without reparsing fragments on the UI thread.
+            var pipeline = GetPipeline();
+            var document = Markdown.Parse(normalized, pipeline);
+            var blocks = BuildBlocksFromDocument(document, normalized, pipeline);
+            var html = BuildHtmlFromBlocks(blocks);
+            var outline = ExtractOutline(document, normalized, blocks);
             return new MarkdownRenderResult { Html = html, Blocks = blocks, Outline = outline };
         }
 
@@ -807,7 +798,10 @@ namespace MetroMarkdownEditor.Services
         public async Task UpdateBlockAsync(WebView webView, MarkdownBlock block)
         {
              if (webView == null || block == null) return;
-            var blockHtml = BuildBlockHtml(block);
+            // Html is produced by the background render pass. Never parse Markdown
+            // here: this method resumes on the UI thread and must remain DOM-only.
+            var blockHtml = block.Html ?? string.Empty;
+            if (blockHtml.Length == 0) return;
             var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(blockHtml));
             var requiresHeavyProcessing = BlockNeedsHeavyProcessing(block);
             var script = new StringBuilder();
@@ -841,12 +835,14 @@ namespace MetroMarkdownEditor.Services
 
         public string ToHtml(string markdown) => Markdig.Markdown.ToHtml(markdown ?? string.Empty, GetPipeline());
 
-        private IReadOnlyList<MarkdownOutlineItem> ExtractOutline(string markdown, IReadOnlyList<MarkdownBlock> blocks)
+        private IReadOnlyList<MarkdownOutlineItem> ExtractOutline(
+            MarkdownDocument document,
+            string markdown,
+            IReadOnlyList<MarkdownBlock> blocks)
         {
             var outline = new List<MarkdownOutlineItem>();
             try
             {
-                var document = Markdown.Parse(markdown ?? string.Empty, GetPipeline());
                 var slugCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 foreach (var heading in document.Descendants<HeadingBlock>())
                 {
@@ -1427,16 +1423,82 @@ namespace MetroMarkdownEditor.Services
             return result;
         }
 
+        private IReadOnlyList<MarkdownBlock> BuildBlocksFromDocument(
+            MarkdownDocument document,
+            string markdown,
+            MarkdownPipeline pipeline)
+        {
+            var blocks = new List<MarkdownBlock>();
+            if (document == null || document.Count == 0)
+            {
+                return blocks;
+            }
+
+            var rendered = new StringBuilder();
+            using (var writer = new StringWriter(rendered))
+            {
+                var renderer = new HtmlRenderer(writer);
+                pipeline.Setup(renderer);
+
+                for (var i = 0; i < document.Count; i++)
+                {
+                    var syntaxBlock = document[i];
+                    var renderedStart = rendered.Length;
+                    renderer.Render(syntaxBlock);
+                    writer.Flush();
+
+                    var innerHtml = rendered.ToString(renderedStart, rendered.Length - renderedStart);
+                    innerHtml = EnhanceHtmlFragment(innerHtml);
+
+                    var sourceStart = Math.Max(0, Math.Min(markdown.Length, syntaxBlock.Span.Start));
+                    var sourceEnd = Math.Max(sourceStart, Math.Min(markdown.Length - 1, syntaxBlock.Span.End));
+                    var sourceLength = markdown.Length == 0 ? 0 : sourceEnd - sourceStart + 1;
+                    var sourceText = sourceLength > 0
+                        ? markdown.Substring(sourceStart, sourceLength)
+                        : string.Empty;
+                    var startLine = Math.Max(0, syntaxBlock.Line);
+
+                    var block = new MarkdownBlock
+                    {
+                        Index = blocks.Count,
+                        StartLine = startLine,
+                        EndLine = startLine + CountNewLines(sourceText),
+                        Text = sourceText
+                    };
+                    block.Html = WrapBlockHtml(block, innerHtml);
+                    blocks.Add(block);
+                }
+            }
+
+            return blocks;
+        }
+
+        private static int CountNewLines(string text)
+        {
+            var count = 0;
+            var value = text ?? string.Empty;
+            for (var i = 0; i < value.Length; i++)
+            {
+                if (value[i] == '\n') count++;
+            }
+            return count;
+        }
+
         private string BuildHtmlFromBlocks(IReadOnlyList<MarkdownBlock> blocks)
         {
             var sb = new StringBuilder();
-            foreach (var block in blocks) sb.Append(BuildBlockHtml(block));
+            foreach (var block in blocks) sb.Append(block.Html ?? BuildBlockHtml(block));
             return sb.ToString();
         }
 
         private string BuildBlockHtml(MarkdownBlock block)
         {
             var inner = EnhanceHtmlFragment(Markdown.ToHtml(block.Text ?? string.Empty, GetPipeline()));
+            return WrapBlockHtml(block, inner);
+        }
+
+        private static string WrapBlockHtml(MarkdownBlock block, string inner)
+        {
             var sb = new StringBuilder();
             sb.Append("<div class=\"md-block\" data-block=\"").Append(block.Index).Append("\" data-start=\"").Append(block.StartLine).Append("\" data-end=\"").Append(block.EndLine).Append("\">");
             sb.Append(inner);

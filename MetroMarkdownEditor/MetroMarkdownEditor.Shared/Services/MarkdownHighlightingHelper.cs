@@ -1,5 +1,6 @@
 using System;
 using System.Text.RegularExpressions;
+using Windows.Foundation;
 using Windows.UI;
 using Windows.UI.Text;
 using Windows.UI.Xaml;
@@ -7,124 +8,202 @@ using Windows.UI.Xaml.Controls;
 
 namespace MetroMarkdownEditor.Services
 {
+    public struct MarkdownHighlightRange
+    {
+        public int Start { get; set; }
+        public int End { get; set; }
+        public bool IsValid { get; set; }
+    }
+
     /// <summary>
-    /// Shared markdown syntax highlighting helper for RichEditBox on Windows/Phone.
+    /// Virtualized Markdown syntax highlighting for RichEditBox. Only the visible
+    /// text plus a small editing margin owns syntax-format spans, keeping native
+    /// layout cost bounded independently of document length.
     /// </summary>
     public static class MarkdownHighlightingHelper
     {
-        public static void Highlight(RichEditBox editorBox)
+        private const int EditingMarginCharacters = 1024;
+
+        public static MarkdownHighlightRange HighlightVisible(
+            RichEditBox editorBox,
+            MarkdownHighlightRange previousRange)
         {
-            if (editorBox == null || editorBox.Document == null) return;
+            if (editorBox == null || editorBox.Document == null)
+            {
+                return new MarkdownHighlightRange();
+            }
 
-            ITextDocument doc = editorBox.Document;
-            string text = string.Empty;
-            doc.GetText(TextGetOptions.None, out text);
-
-            if (string.IsNullOrEmpty(text)) return;
+            var doc = editorBox.Document;
+            var selectionStart = doc.Selection.StartPosition;
+            var selectionEnd = doc.Selection.EndPosition;
+            var bodyColor = GetBodyColor();
+            var syntaxColor = GetSyntaxColor();
+            var currentRange = GetVisibleRange(editorBox, selectionStart, selectionEnd);
+            var displayUpdatesBatched = false;
+            var undoGroupOpen = false;
 
             try
             {
                 doc.BatchDisplayUpdates();
+                displayUpdatesBatched = true;
+                doc.BeginUndoGroup();
+                undoGroupOpen = true;
 
-                bool isDark = false;
-                var rootFrame = Window.Current.Content as FrameworkElement;
-
-                if (rootFrame != null)
+                if (previousRange.IsValid
+                    && (previousRange.Start != currentRange.Start || previousRange.End != currentRange.End))
                 {
-                    isDark = rootFrame.RequestedTheme == ElementTheme.Dark;
-                }
-                else
-                {
-                    isDark = Application.Current.RequestedTheme == ApplicationTheme.Dark;
-                }
-
-                Color bodyColor;
-                Color syntaxColor;
-
-                if (isDark)
-                {
-                    bodyColor = Colors.White;
-                    syntaxColor = Color.FromArgb(255, 120, 120, 120);
-                }
-                else
-                {
-                    bodyColor = Colors.Black;
-                    syntaxColor = Color.FromArgb(255, 150, 150, 150);
+                    try
+                    {
+                        doc.GetRange(previousRange.Start, previousRange.End)
+                            .CharacterFormat.ForegroundColor = bodyColor;
+                    }
+                    catch
+                    {
+                    }
                 }
 
-                int start = doc.Selection.StartPosition;
-                int end = doc.Selection.EndPosition;
+                var range = doc.GetRange(currentRange.Start, currentRange.End);
+                string text;
+                range.GetText(TextGetOptions.None, out text);
+                text = (text ?? string.Empty).TrimEnd('\0').Replace('\r', '\n');
 
-                ITextRange fullRange = doc.GetRange(0, text.Length);
-                fullRange.CharacterFormat.ForegroundColor = bodyColor;
-
-                RegexOptions options = RegexOptions.Multiline;
-
-                // Headers
-                MatchCollection headers = Regex.Matches(text, @"(?:^|\r)(#{1,6})(?=\s)", options);
-                foreach (Match m in headers)
+                if (text.Length > 0)
                 {
-                    Group g = m.Groups[1];
-                    ITextRange range = doc.GetRange(g.Index, g.Index + g.Length);
-                    range.CharacterFormat.ForegroundColor = syntaxColor;
+                    currentRange.End = currentRange.Start + text.Length;
+                    doc.GetRange(currentRange.Start, currentRange.End)
+                        .CharacterFormat.ForegroundColor = bodyColor;
+                    ApplySyntaxRanges(doc, text, currentRange.Start, syntaxColor);
                 }
 
-                // Links / images
-                MatchCollection links = Regex.Matches(text, @"(!?\[)(.*?)(\])(\(.*?\))", options);
-                foreach (Match m in links)
-                {
-                    ITextRange r1 = doc.GetRange(m.Groups[1].Index, m.Groups[1].Index + m.Groups[1].Length);
-                    r1.CharacterFormat.ForegroundColor = syntaxColor;
-
-                    ITextRange r3 = doc.GetRange(m.Groups[3].Index, m.Groups[3].Index + m.Groups[3].Length);
-                    r3.CharacterFormat.ForegroundColor = syntaxColor;
-
-                    ITextRange r4 = doc.GetRange(m.Groups[4].Index, m.Groups[4].Index + m.Groups[4].Length);
-                    r4.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // Bold / italic / strikethrough
-                MatchCollection styles = Regex.Matches(text, @"(\*\*|__|\*|_|~~)(.+?)\1", options);
-                foreach (Match m in styles)
-                {
-                    Group leftSign = m.Groups[1];
-                    ITextRange rLeft = doc.GetRange(leftSign.Index, leftSign.Index + leftSign.Length);
-                    rLeft.CharacterFormat.ForegroundColor = syntaxColor;
-
-                    int rightSignStart = m.Index + m.Length - leftSign.Length;
-                    ITextRange rRight = doc.GetRange(rightSignStart, rightSignStart + leftSign.Length);
-                    rRight.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // Blockquote
-                MatchCollection quotes = Regex.Matches(text, @"(?:^|\r)(>\s)", options);
-                foreach (Match m in quotes)
-                {
-                    Group g = m.Groups[1];
-                    ITextRange range = doc.GetRange(g.Index, g.Index + g.Length);
-                    range.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // Horizontal rule
-                MatchCollection hrs = Regex.Matches(text, @"(?:^|\r)(\-\-\-|\*\*\*)$", options);
-                foreach (Match m in hrs)
-                {
-                    Group g = m.Groups[1];
-                    ITextRange range = doc.GetRange(g.Index, g.Index + g.Length);
-                    range.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                doc.Selection.SetRange(start, end);
+                doc.Selection.SetRange(selectionStart, selectionEnd);
                 doc.Selection.CharacterFormat.ForegroundColor = bodyColor;
+                currentRange.IsValid = true;
+                return currentRange;
             }
             catch
             {
-                // ignore
+                return previousRange;
             }
             finally
             {
-                doc.ApplyDisplayUpdates();
+                if (undoGroupOpen)
+                {
+                    doc.EndUndoGroup();
+                }
+
+                if (displayUpdatesBatched)
+                {
+                    doc.ApplyDisplayUpdates();
+                }
             }
+        }
+
+        private static MarkdownHighlightRange GetVisibleRange(
+            RichEditBox editorBox,
+            int selectionStart,
+            int selectionEnd)
+        {
+            var doc = editorBox.Document;
+            var start = Math.Max(0, Math.Min(selectionStart, selectionEnd));
+            var end = Math.Max(start, Math.Max(selectionStart, selectionEnd));
+
+            try
+            {
+                var x = Math.Max(1, editorBox.Padding.Left + 1);
+                var topY = Math.Max(1, editorBox.Padding.Top + 1);
+                var bottomY = Math.Max(topY, editorBox.ActualHeight - editorBox.Padding.Bottom - 1);
+                var top = doc.GetRangeFromPoint(new Point(x, topY), PointOptions.ClientCoordinates);
+                var bottom = doc.GetRangeFromPoint(new Point(x, bottomY), PointOptions.ClientCoordinates);
+
+                if (top != null && bottom != null)
+                {
+                    start = Math.Min(top.StartPosition, bottom.StartPosition);
+                    end = Math.Max(top.EndPosition, bottom.EndPosition);
+                }
+            }
+            catch
+            {
+            }
+
+            var result = doc.GetRange(start, end);
+            result.MoveStart(TextRangeUnit.Character, -EditingMarginCharacters);
+            result.MoveEnd(TextRangeUnit.Character, EditingMarginCharacters);
+            result.MoveStart(TextRangeUnit.Line, -1);
+            result.MoveEnd(TextRangeUnit.Line, 1);
+
+            return new MarkdownHighlightRange
+            {
+                Start = Math.Max(0, result.StartPosition),
+                End = Math.Max(0, result.EndPosition),
+                IsValid = true
+            };
+        }
+
+        private static void ApplySyntaxRanges(
+            ITextDocument doc,
+            string text,
+            int offset,
+            Color syntaxColor)
+        {
+            var options = RegexOptions.Multiline;
+
+            foreach (Match match in Regex.Matches(text, @"(?:^|\n)(#{1,6})(?=\s)", options))
+            {
+                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
+            }
+
+            foreach (Match match in Regex.Matches(text, @"(!?\[)(.*?)(\])(\(.*?\))", options))
+            {
+                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
+                ApplyGroup(doc, match.Groups[3], offset, syntaxColor);
+                ApplyGroup(doc, match.Groups[4], offset, syntaxColor);
+            }
+
+            foreach (Match match in Regex.Matches(text, @"(\*\*|__|\*|_|~~)(.+?)\1", options))
+            {
+                var marker = match.Groups[1];
+                ApplyGroup(doc, marker, offset, syntaxColor);
+                var rightStart = offset + match.Index + match.Length - marker.Length;
+                doc.GetRange(rightStart, rightStart + marker.Length)
+                    .CharacterFormat.ForegroundColor = syntaxColor;
+            }
+
+            foreach (Match match in Regex.Matches(text, @"(?:^|\n)(>\s)", options))
+            {
+                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
+            }
+
+            foreach (Match match in Regex.Matches(text, @"(?:^|\n)(\-\-\-|\*\*\*)$", options))
+            {
+                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
+            }
+        }
+
+        private static void ApplyGroup(ITextDocument doc, Group group, int offset, Color color)
+        {
+            if (group == null || !group.Success || group.Length == 0) return;
+            var start = offset + group.Index;
+            doc.GetRange(start, start + group.Length).CharacterFormat.ForegroundColor = color;
+        }
+
+        private static Color GetBodyColor()
+        {
+            return IsDarkTheme() ? Colors.White : Colors.Black;
+        }
+
+        private static Color GetSyntaxColor()
+        {
+            return IsDarkTheme()
+                ? Color.FromArgb(255, 120, 120, 120)
+                : Color.FromArgb(255, 150, 150, 150);
+        }
+
+        private static bool IsDarkTheme()
+        {
+            var root = Window.Current.Content as FrameworkElement;
+            return root != null
+                ? root.RequestedTheme == ElementTheme.Dark
+                : Application.Current.RequestedTheme == ApplicationTheme.Dark;
         }
     }
 }

@@ -38,17 +38,13 @@ namespace MetroMarkdownEditor.Windows
         private readonly DispatcherTimer _syntaxTimer;
         private readonly DispatcherTimer _previewScrollTimer;
         private readonly DispatcherTimer _autoSaveTimer;
+        private readonly DispatcherTimer _caretTimer;
         
         // 渲染服务：负责生成 HTML 和 CSS
         private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
         private readonly MarkdownRenderService _backgroundRenderService = new MarkdownRenderService();
         private readonly HttpClient _imageUploadHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
         private readonly AutoSaveService _autoSave = AutoSaveService.Instance;
-        
-        // 撤销/重做 专用栈和计时器（用于合并短时间内的连续输入）
-        private readonly DispatcherTimer _undoTimer;
-        private readonly Stack<string> _undoStack = new Stack<string>();
-        private readonly Stack<string> _redoStack = new Stack<string>();
         
         // 锁标志位：防止在执行撤销/重做操作时，再次触发 TextChanged 事件导致死循环
         private bool _isUndoRedoLocked;
@@ -69,6 +65,8 @@ namespace MetroMarkdownEditor.Windows
         private int _renderGeneration;
         private bool _pendingSyntaxRefresh;
         private bool _pendingColdPreviewRefresh;
+        private bool _pendingPreviewCssRefresh;
+        private bool _pendingHiddenPreviewRefresh;
         private bool _isPreviewOperationRunning;
         private bool _pendingPreviewRenderRequest;
         private bool _suppressEditorScrollSync;
@@ -82,6 +80,7 @@ namespace MetroMarkdownEditor.Windows
         private int _editorRevision;
         private bool _isPreviewParseRunning;
         private bool _isPageActive;
+        private MarkdownHighlightRange _highlightRange;
         
         // 编辑器的内部滚动条引用，用于同步滚动
         private ScrollViewer _editorScrollViewer;
@@ -107,17 +106,17 @@ namespace MetroMarkdownEditor.Windows
             InitializeComponent();
 
             // 初始化计时器
-            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+            _typingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
             _typingTimer.Tick += TypingTimer_Tick;
 
-            _syntaxTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+            _syntaxTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(650) };
             _syntaxTimer.Tick += SyntaxTimer_Tick;
-
-            _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-            _undoTimer.Tick += UndoTimer_Tick;
 
             _previewScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
             _previewScrollTimer.Tick += PreviewScrollTimer_Tick;
+
+            _caretTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            _caretTimer.Tick += CaretTimer_Tick;
 
             _autoSaveTimer = new DispatcherTimer();
             _autoSaveTimer.Tick += AutoSaveTimer_Tick;
@@ -165,10 +164,6 @@ namespace MetroMarkdownEditor.Windows
             var request = e.Parameter as EditorNavigationRequest;
             if (ViewModel != null)
             {
-                // 关键：先清空撤销历史，确保新文件不继承旧文件的 Undo 记录
-                _undoStack.Clear();
-                _redoStack.Clear();
-                
                 if (request != null)
                 {
                     switch (request.Mode)
@@ -233,9 +228,9 @@ namespace MetroMarkdownEditor.Windows
 
             _typingTimer.Stop();
             _syntaxTimer.Stop();
-            _undoTimer.Stop();
             _previewScrollTimer.Stop();
             _autoSaveTimer.Stop();
+            _caretTimer.Stop();
             
             // 取消全局快捷键监听
             Window.Current.CoreWindow.KeyDown -= CoreWindow_KeyDown;
@@ -364,6 +359,9 @@ namespace MetroMarkdownEditor.Windows
 
             if (!e.IsIntermediate)
             {
+                _pendingSyntaxRefresh = true;
+                _syntaxTimer.Stop();
+                _syntaxTimer.Start();
                 _previewScrollTimer.Stop();
                 var _ = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
                 return;
@@ -521,6 +519,10 @@ namespace MetroMarkdownEditor.Windows
                 
                 // 自动滚动标签栏使当前文档可见 (平滑动画)
                 var __ = ScrollToActiveDocumentAsync();
+            }
+            else if (e.PropertyName == EditorViewModel.PreviewRefreshRequestedPropertyName)
+            {
+                QueuePreviewRefresh(refreshCss: true);
             }
             else if (e.PropertyName == "ViewMode" && ShouldRenderPreview())
             {
@@ -1104,6 +1106,7 @@ namespace MetroMarkdownEditor.Windows
         {
             if (ViewModel == null) return;
             if (!ShouldRenderPreview()) return;
+            var generation = ++_renderGeneration;
             if (_isPreviewOperationRunning)
             {
                 _pendingPreviewRenderRequest = true;
@@ -1115,8 +1118,6 @@ namespace MetroMarkdownEditor.Windows
 
             try
             {
-                var generation = ++_renderGeneration;
-
                 var theme = GetCurrentTheme();
                 ViewModel.SetTheme(theme);
 
@@ -1298,10 +1299,6 @@ namespace MetroMarkdownEditor.Windows
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel.ActiveDocument;
 
-            // 重置 Undo 计时器 (防抖动)
-            _undoTimer.Stop();
-            _undoTimer.Start();
-
             _pendingSyntaxRefresh = true;
             _pendingColdPreviewRefresh = true;
             _syntaxTimer.Stop();
@@ -1315,6 +1312,26 @@ namespace MetroMarkdownEditor.Windows
                 _autoSaveTimer.Start();
             }
 
+            ScheduleCaretCenteringIfNeeded();
+        }
+
+        private void ScheduleCaretCenteringIfNeeded()
+        {
+            var settings = EditorSettingsService.Instance;
+            if (!settings.TypewriterFocusModeEnabled || !settings.KeepCaretInMiddleWhenTypewriterModeEnabled)
+            {
+                return;
+            }
+
+            // Coalesce native caret geometry and ChangeView work to one operation
+            // per frame instead of placing it in RichEditBox.TextChanged.
+            _caretTimer.Stop();
+            _caretTimer.Start();
+        }
+
+        private void CaretTimer_Tick(object sender, object e)
+        {
+            _caretTimer.Stop();
             KeepCaretCenteredIfNeeded();
         }
 
@@ -1438,12 +1455,6 @@ namespace MetroMarkdownEditor.Windows
             }
         }
 
-        private void UndoTimer_Tick(object sender, object e)
-        {
-            _undoTimer.Stop();
-            SaveSnapshot(); // 保存撤销快照
-        }
-
         private async void AutoSaveTimer_Tick(object sender, object e)
         {
             _autoSaveTimer.Stop();
@@ -1520,9 +1531,13 @@ namespace MetroMarkdownEditor.Windows
                 var document = ViewModel.ActiveDocument;
                 var revision = _editorRevision;
                 _pendingColdPreviewRefresh = false;
+                var refreshCss = _pendingPreviewCssRefresh;
+                _pendingPreviewCssRefresh = false;
+                var renderWhenHidden = _pendingHiddenPreviewRefresh;
+                _pendingHiddenPreviewRefresh = false;
                 var markdown = FlushPendingEditorText(refreshPreview: false);
 
-                if (!ShouldRenderPreview() || document == null)
+                if ((!ShouldRenderPreview() && !renderWhenHidden) || document == null)
                 {
                     return;
                 }
@@ -1536,7 +1551,7 @@ namespace MetroMarkdownEditor.Windows
                         && ReferenceEquals(document, ViewModel.ActiveDocument)
                         && string.Equals(document.Content ?? string.Empty, markdown, StringComparison.Ordinal))
                     {
-                        ViewModel.ApplyPreviewResult(rendered, refreshCss: false);
+                        ViewModel.ApplyPreviewResult(rendered, refreshCss: refreshCss);
                     }
                 }
                 catch (Exception ex)
@@ -1548,10 +1563,33 @@ namespace MetroMarkdownEditor.Windows
                     _isPreviewParseRunning = false;
                     if (_pendingColdPreviewRefresh && _isPageActive)
                     {
-                        _typingTimer.Stop();
-                        _typingTimer.Start();
+                        var _ = Dispatcher.RunAsync(
+                            global::Windows.UI.Core.CoreDispatcherPriority.Low,
+                            () => TypingTimer_Tick(null, null));
                     }
                 }
+            }
+        }
+
+        private void QueuePreviewRefresh(bool refreshCss)
+        {
+            if (ViewModel == null || ViewModel.ActiveDocument == null) return;
+
+            _pendingColdPreviewRefresh = true;
+            _pendingPreviewCssRefresh = _pendingPreviewCssRefresh || refreshCss;
+            _pendingHiddenPreviewRefresh = true;
+
+            // Document switches, settings changes and explicit refreshes already
+            // have a ViewModel text snapshot, so start their worker immediately.
+            // Keystrokes continue to use the 160 ms debounce above.
+            if (!_editorTextDirty && !_isPreviewParseRunning)
+            {
+                TypingTimer_Tick(null, null);
+            }
+            else if (!_isPreviewParseRunning)
+            {
+                _typingTimer.Stop();
+                _typingTimer.Start();
             }
         }
 
@@ -1577,7 +1615,7 @@ namespace MetroMarkdownEditor.Windows
             {
                 var previous = previousBlocks[i];
                 var next = nextBlocks[i];
-                if (!string.Equals(previous.Text, next.Text, StringComparison.Ordinal))
+                if (!string.Equals(previous.Html, next.Html, StringComparison.Ordinal))
                 {
                     changed.Add(next);
                 }
@@ -1635,107 +1673,85 @@ namespace MetroMarkdownEditor.Windows
             return text;
         }
 
-        private void SaveSnapshot()
-        {
-            var snapshot = FlushPendingEditorText(refreshPreview: false);
-            if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
-            {
-                _undoStack.Push(snapshot);
-                _redoStack.Clear();
-            }
-        }
-
         private void ResetUndoRedo()
         {
-            _undoStack.Clear();
-            _redoStack.Clear();
-            var snapshot = FlushPendingEditorText(refreshPreview: false);
-            _undoStack.Push(snapshot);
+            if (EditorBox == null || EditorBox.Document == null) return;
+            EditorBox.Document.UndoLimit = 0;
+            EditorBox.Document.UndoLimit = 100;
         }
 
-        private async void UndoButton_Click(object sender, RoutedEventArgs e)
+        private void UndoButton_Click(object sender, RoutedEventArgs e)
         {
             Undo();
-            await RenderPreviewAsync();
         }
 
-        private async void RedoButton_Click(object sender, RoutedEventArgs e)
+        private void RedoButton_Click(object sender, RoutedEventArgs e)
         {
             Redo();
-            await RenderPreviewAsync();
         }
 
         private void Undo()
         {
-            // The debounce timer may not have committed the newest edit yet.
-            // Capture it as the current transaction before moving backward.
-            var snapshot = FlushPendingEditorText(refreshPreview: false);
-            if (_undoStack.Count == 0 || _undoStack.Peek() != snapshot)
-            {
-                _undoStack.Push(snapshot);
-                _redoStack.Clear();
-            }
-
-            if (_undoStack.Count <= 1) return;
-            _isUndoRedoLocked = true;
-            try
-            {
-                var current = _undoStack.Pop();
-                _redoStack.Push(current);
-                var previous = _undoStack.Peek();
-                ApplySnapshot(previous);
-            }
-            finally
-            {
-                _isUndoRedoLocked = false;
-            }
+            ApplyNativeUndoRedo(redo: false);
         }
 
         private void Redo()
         {
-            if (_redoStack.Count == 0) return;
+            ApplyNativeUndoRedo(redo: true);
+        }
+
+        private void ApplyNativeUndoRedo(bool redo)
+        {
+            if (EditorBox == null || EditorBox.Document == null) return;
+
+            _typingTimer.Stop();
+            _syntaxTimer.Stop();
+            FlushPendingEditorText(refreshPreview: false);
+
+            var changedText = false;
+            var before = _lastEditorText ?? string.Empty;
             _isUndoRedoLocked = true;
             try
             {
-                var next = _redoStack.Pop();
-                _undoStack.Push(next);
-                ApplySnapshot(next);
+                // Programmatic syntax-color changes can appear as formatting-only
+                // entries on some RichEdit implementations. Skip those and stop
+                // at the first operation that actually changes Markdown text.
+                for (var attempt = 0; attempt < 16; attempt++)
+                {
+                    if (redo)
+                    {
+                        if (!EditorBox.Document.CanRedo()) break;
+                        EditorBox.Document.Redo();
+                    }
+                    else
+                    {
+                        if (!EditorBox.Document.CanUndo()) break;
+                        EditorBox.Document.Undo();
+                    }
+
+                    var current = GetNormalizedEditorText();
+                    if (!string.Equals(current, before, StringComparison.Ordinal))
+                    {
+                        changedText = true;
+                        break;
+                    }
+                }
             }
             finally
             {
                 _isUndoRedoLocked = false;
             }
-        }
 
-        /// <summary>
-        /// 应用撤销/重做的快照
-        /// </summary>
-        private void ApplySnapshot(string text)
-        {
-            if (EditorBox == null || EditorBox.Document == null) return;
+            if (!changedText) return;
 
-            _undoTimer.Stop();
-            _typingTimer.Stop();
-            _syntaxTimer.Stop();
-            _pendingColdPreviewRefresh = false;
-            _pendingSyntaxRefresh = false;
             _editorRevision++;
-            SetEditorTextWithoutNotification(text);
-            _lastEditorText = NormalizeLineEndings(text);
-            _editorTextDirty = false;
-            _dirtyEditorDocument = null;
-            
-            // 每次 SetText 后必须重新应用格式，因为 RichEditBox 会回退到默认样式
-            ApplyEditorFormatting();
-            HighlightMarkdownSyntax(forceFullDocument: true);
-            
-            if (ViewModel != null)
-            {
-                ViewModel.SetContentFromEditor(text);
-                ViewModel.RefreshPreview();
-                _loadedEditorDocument = ViewModel.ActiveDocument;
-            }
-            var _ = RenderPreviewAsync();
+            _editorTextDirty = true;
+            _dirtyEditorDocument = ViewModel != null ? ViewModel.ActiveDocument : null;
+            var text = FlushPendingEditorText(refreshPreview: false);
+            _lastEditorText = text;
+            _pendingSyntaxRefresh = true;
+            HighlightMarkdownSyntax(forceFullDocument: false);
+            if (ViewModel != null) ViewModel.RefreshPreview();
             UpdateEditorBottomSpacer();
         }
 
@@ -1753,41 +1769,21 @@ namespace MetroMarkdownEditor.Windows
 
             try 
             {
-                // 1. 计算目标字号 (Windows APP 推荐使用 Point)
-                var displayInfo = global::Windows.Graphics.Display.DisplayInformation.GetForCurrentView();
-                double scaleFactor = displayInfo.LogicalDpi / 96.0f;
-
                 float targetSize = 16f; // 默认磅值
-                // if (scaleFactor > 2.0) targetSize = 26f; // 高分屏补偿
-
                 string targetFont = "Consolas";
 
-                // 2. 设置“默认输入格式” (光标处新打的字)
+                // The control already carries the same FontFamily/FontSize in
+                // XAML. Updating only the document default keeps newly inserted
+                // text consistent without a full GetText + range-format pass,
+                // which fragments RichEdit's backing store and delays layout.
                 var defaultFormat = EditorBox.Document.GetDefaultCharacterFormat();
                 defaultFormat.Name = targetFont;
                 defaultFormat.Size = targetSize;
                 EditorBox.Document.SetDefaultCharacterFormat(defaultFormat);
 
-                // 3. 强制覆盖“已有全文”的格式 (但只覆盖字体和大小，保留高亮颜色)
-                // 这是解决 SetText 后回退到系统默认字体的关键
-                string text;
-                EditorBox.Document.GetText(TextGetOptions.None, out text);
-                
-                if (!string.IsNullOrEmpty(text))
-                {
-                    // 选中全文
-                    var fullRange = EditorBox.Document.GetRange(0, text.Length);
-                    var rangeFormat = fullRange.CharacterFormat;
-                    
-                    // 检查是否需要更新，避免不必要的属性写入导致闪烁
-                    // 注意：浮点数比较需要容差
-                    if (rangeFormat.Name != targetFont || Math.Abs(rangeFormat.Size - targetSize) > 0.1f)
-                    {
-                        rangeFormat.Name = targetFont;
-                        rangeFormat.Size = targetSize;
-                        fullRange.CharacterFormat = rangeFormat;
-                    }
-                }
+                // RichEdit stores compact edit deltas, avoiding the previous
+                // timer-driven full-document string snapshots.
+                EditorBox.Document.UndoLimit = 100;
             }
             catch (Exception ex)
             {
@@ -1872,6 +1868,7 @@ namespace MetroMarkdownEditor.Windows
             _suppressTextChanged = true;
             try
             {
+                _highlightRange = new MarkdownHighlightRange();
                 EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
             }
             finally
@@ -1891,149 +1888,10 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private void HighlightMarkdownSyntax(bool forceFullDocument)
         {
-            if (EditorBox == null || EditorBox.Document == null) return;
-
-            ITextDocument doc = EditorBox.Document;
-
-            try
-            {
-                // 批量更新，暂停 UI 重绘以提高性能
-                doc.BatchDisplayUpdates();
-
-                bool isDark = false;
-                var rootFrame = Window.Current.Content as FrameworkElement;
-                if (rootFrame != null)
-                {
-                    isDark = rootFrame.RequestedTheme == ElementTheme.Dark;
-                }
-                else
-                {
-                    isDark = Application.Current.RequestedTheme == ApplicationTheme.Dark;
-                }
-
-                Color bodyColor;
-                Color syntaxColor;
-
-                if (isDark)
-                {
-                    bodyColor = Colors.White;
-                    syntaxColor = Color.FromArgb(255, 120, 120, 120);
-                }
-                else
-                {
-                    bodyColor = Colors.Black;
-                    syntaxColor = Color.FromArgb(255, 150, 150, 150);
-                }
-
-                int start = doc.Selection.StartPosition;
-                int end = doc.Selection.EndPosition;
-                bool useFullDocument = forceFullDocument;
-                int highlightStart = 0;
-                int highlightLength;
-                string workingText;
-
-                if (useFullDocument)
-                {
-                    string text = string.Empty;
-                    doc.GetText(TextGetOptions.None, out text);
-                    if (string.IsNullOrEmpty(text)) return;
-                    workingText = text.Replace('\r', '\n');
-                    highlightLength = text.Length;
-                }
-                else
-                {
-                    highlightStart = Math.Max(0, Math.Min(start, end) - 4096);
-                    var highlightEnd = Math.Max(start, end) + 4096;
-                    string text = string.Empty;
-                    try
-                    {
-                        doc.GetRange(highlightStart, highlightEnd).GetText(TextGetOptions.None, out text);
-                    }
-                    catch
-                    {
-                        doc.GetText(TextGetOptions.None, out text);
-                        highlightStart = 0;
-                    }
-
-                    if (string.IsNullOrEmpty(text)) return;
-                    workingText = text.Replace('\r', '\n').TrimEnd('\0');
-                    highlightLength = workingText.Length;
-                }
-
-                ITextRange fullRange = doc.GetRange(highlightStart, highlightStart + highlightLength);
-                fullRange.CharacterFormat.ForegroundColor = bodyColor;
-
-                RegexOptions options = RegexOptions.Multiline;
-
-                // 标题
-                MatchCollection headers = Regex.Matches(workingText, @"(?:^|\n)(#{1,6})(?=\s)", options);
-                foreach (Match m in headers)
-                {
-                    Group g = m.Groups[1];
-                    int rangeStart = highlightStart + g.Index;
-                    ITextRange range = doc.GetRange(rangeStart, rangeStart + g.Length);
-                    range.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // 链接
-                MatchCollection links = Regex.Matches(workingText, @"(!?\[)(.*?)(\])(\(.*?\))", options);
-                foreach (Match m in links)
-                {
-                    ITextRange r1 = doc.GetRange(highlightStart + m.Groups[1].Index, highlightStart + m.Groups[1].Index + m.Groups[1].Length);
-                    r1.CharacterFormat.ForegroundColor = syntaxColor;
-                    ITextRange r3 = doc.GetRange(highlightStart + m.Groups[3].Index, highlightStart + m.Groups[3].Index + m.Groups[3].Length);
-                    r3.CharacterFormat.ForegroundColor = syntaxColor;
-                    ITextRange r4 = doc.GetRange(highlightStart + m.Groups[4].Index, highlightStart + m.Groups[4].Index + m.Groups[4].Length);
-                    r4.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // 样式 (粗体/斜体)
-                MatchCollection styles = Regex.Matches(workingText, @"(\*\*|__|\*|_|~~)(.+?)\1", options);
-                foreach (Match m in styles)
-                {
-                    Group leftSign = m.Groups[1];
-                    ITextRange rLeft = doc.GetRange(highlightStart + leftSign.Index, highlightStart + leftSign.Index + leftSign.Length);
-                    rLeft.CharacterFormat.ForegroundColor = syntaxColor;
-                    int rightSignStart = highlightStart + m.Index + m.Length - leftSign.Length;
-                    ITextRange rRight = doc.GetRange(rightSignStart, rightSignStart + leftSign.Length);
-                    rRight.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // 引用
-                MatchCollection quotes = Regex.Matches(workingText, @"(?:^|\n)(>\s)", options);
-                foreach (Match m in quotes)
-                {
-                    Group g = m.Groups[1];
-                    int rangeStart = highlightStart + g.Index;
-                    ITextRange range = doc.GetRange(rangeStart, rangeStart + g.Length);
-                    range.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // 分割线
-                MatchCollection hrs = Regex.Matches(workingText, @"(?:^|\n)(\-\-\-|\*\*\*)$", options);
-                foreach (Match m in hrs)
-                {
-                    Group g = m.Groups[1];
-                    int rangeStart = highlightStart + g.Index;
-                    ITextRange range = doc.GetRange(rangeStart, rangeStart + g.Length);
-                    range.CharacterFormat.ForegroundColor = syntaxColor;
-                }
-
-                // 恢复光标位置
-                doc.Selection.SetRange(start, end);
-                
-                // 恢复输入颜色，确保用户接下来输入的文字颜色正确
-                doc.Selection.CharacterFormat.ForegroundColor = bodyColor;
-            }
-            catch
-            {
-                // 忽略高亮过程中的错误，不影响核心功能
-            }
-            finally
-            {
-                // 恢复 UI 重绘
-                doc.ApplyDisplayUpdates();
-            }
+            // Syntax display is intentionally viewport-virtualized for every
+            // document. The flag is retained for call-site compatibility; themes,
+            // edits and navigation all use the same bounded rendering path.
+            _highlightRange = MarkdownHighlightingHelper.HighlightVisible(EditorBox, _highlightRange);
         }
 
         // ==========================================
@@ -2084,19 +1942,10 @@ namespace MetroMarkdownEditor.Windows
             _lastPreviewScrollRatio = -1;
             _previewScrollFailureCount = 0;
 
-            // 如果此时编辑器已有内容，尝试同步一次预览
-            if (EditorBox != null && EditorBox.Document != null)
-            {
-                string current = string.Empty;
-                EditorBox.Document.GetText(TextGetOptions.None, out current);
-                if (!string.IsNullOrWhiteSpace(current))
-                {
-                    await RenderPreviewAsync();
-                }
-            }
-
-            // 处理挂起的渲染任务
-            if (_pendingRender)
+            // Navigation may complete after one or more queued refreshes. Apply
+            // the newest prepared HTML once; do not read the whole RichEditBox or
+            // inject the same preview twice.
+            if (_pendingRender || !string.IsNullOrEmpty(ViewModel != null ? ViewModel.PreviewContent : null))
             {
                 _pendingRender = false;
                 await RenderPreviewAsync();

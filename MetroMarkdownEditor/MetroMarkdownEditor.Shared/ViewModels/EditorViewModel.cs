@@ -21,6 +21,8 @@ namespace MetroMarkdownEditor.ViewModels
 {
     public class EditorViewModel : BaseViewModel
     {
+        public const string PreviewRefreshRequestedPropertyName = "PreviewRefreshRequested";
+
         private DocumentViewModel _activeDocument;
         private EditorViewMode _viewMode = EditorViewMode.Split;
         private readonly ThemeService _themeService;
@@ -45,7 +47,11 @@ namespace MetroMarkdownEditor.ViewModels
             _recentFiles = recentFiles;
             OpenDocuments = new ObservableCollection<DocumentViewModel>();
 
-            _themeService.ThemeChanged += (s, e) => UpdatePreview();
+            _themeService.ThemeChanged += (s, e) =>
+            {
+                PreviewCss = _themeService.BuildCss();
+                RequestPreviewRefresh();
+            };
 
             NewCommand = new RelayCommand(async _ => await CreateNewAsync());
             OpenCommand = new RelayCommand(async _ => await OpenFromPickerAsync());
@@ -83,7 +89,7 @@ namespace MetroMarkdownEditor.ViewModels
                 }
 
                 RaisePropertyChanged();
-                UpdatePreview();
+                RequestPreviewRefresh();
             }
         }
 
@@ -197,7 +203,7 @@ namespace MetroMarkdownEditor.ViewModels
             }
 
             _currentTheme = theme;
-            UpdatePreview();
+            PreviewCss = _themeService.BuildCss();
         }
 
         public async Task InitializeAsync()
@@ -455,20 +461,13 @@ namespace MetroMarkdownEditor.ViewModels
                 {
                     return;
                 }
-                UpdatePreview();
+                RequestPreviewRefresh();
             }
         }
 
-        private void UpdatePreview()
+        private void RequestPreviewRefresh()
         {
-            if (ActiveDocument == null)
-            {
-                return;
-            }
-
-            var markdown = ActiveDocument.Content ?? string.Empty;
-            var rendered = _renderService.RenderMarkdown(markdown);
-            ApplyPreviewResult(rendered, refreshCss: true);
+            RaisePropertyChanged(PreviewRefreshRequestedPropertyName);
         }
 
         /// <summary>
@@ -487,9 +486,22 @@ namespace MetroMarkdownEditor.ViewModels
                 PreviewCss = _themeService.BuildCss();
             }
 
+            if (rendered.Blocks != null)
+            {
+                foreach (var block in rendered.Blocks)
+                {
+                    if (block != null)
+                    {
+                        block.Html = NormalizeImageSourcesInHtml(block.Html);
+                    }
+                }
+            }
+
             PreviewBlocks = rendered.Blocks;
             OutlineItems = rendered.Outline;
-            PreviewContent = NormalizeImageSourcesInHtml(rendered.Html);
+            PreviewContent = rendered.Blocks != null
+                ? string.Concat(rendered.Blocks.Where(block => block != null).Select(block => block.Html ?? string.Empty))
+                : NormalizeImageSourcesInHtml(rendered.Html);
         }
 
         private string ConvertMarkdownToHtml(string markdown)
@@ -719,7 +731,7 @@ namespace MetroMarkdownEditor.ViewModels
 
         public void RefreshPreview()
         {
-            UpdatePreview();
+            RequestPreviewRefresh();
         }
 
 #if WINDOWS_PHONE_APP
