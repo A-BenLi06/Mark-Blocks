@@ -2,12 +2,13 @@
     x:Class="MetroMarkdownEditor.Windows.ExportSettings"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    HorizontalContentAlignment="Stretch"
     Title="Export"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
 
-    <ScrollViewer>
-        <StackPanel Margin="24,24,24,32">
+    <!-- SettingsFlyout owns the single scrolling viewport and content padding. -->
+        <StackPanel>
             <TextBlock Text="Export Formats"
                        FontSize="18"
                        FontWeight="SemiBold"
@@ -52,5 +53,5 @@
             <CheckBox Content="Open exported file location"
                       IsChecked="{Binding OpenExportedFileLocation, Mode=TwoWay}" />
         </StackPanel>
-    </ScrollViewer>
+
 </SettingsFlyout>

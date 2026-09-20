@@ -2,12 +2,13 @@
     x:Class="MetroMarkdownEditor.Windows.DevSettings"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    HorizontalContentAlignment="Stretch"
     Title="Developer"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
 
-    <ScrollViewer>
-        <StackPanel Margin="24,24,24,24">
+    <!-- SettingsFlyout owns the single scrolling viewport and content padding. -->
+        <StackPanel>
             <!-- Mermaid Debug Section -->
             <TextBlock Text="Mermaid Debugging"
                        FontSize="18"
@@ -22,5 +23,5 @@
             <ToggleSwitch Header="Mermaid initialization information"
                           IsOn="{Binding MermaidDebugEnabled, Mode=TwoWay}" />
         </StackPanel>
-    </ScrollViewer>
+
 </SettingsFlyout>

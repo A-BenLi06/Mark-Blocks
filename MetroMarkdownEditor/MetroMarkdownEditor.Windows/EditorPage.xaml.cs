@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -2018,37 +2018,39 @@ namespace MetroMarkdownEditor.Windows
             }
 
             var items = ViewModel != null ? ViewModel.OutlineItems : null;
+            var bounds = Window.Current.Bounds;
             var panel = new Grid
             {
-                Width = 420,
-                MaxHeight = Math.Max(260, Window.Current.Bounds.Height * 0.72),
-                Background = (SolidColorBrush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"]
+                Width = Math.Min(420, Math.Max(1, bounds.Width - 26)),
+                MaxHeight = Math.Max(1, Math.Min(bounds.Height * 0.72, bounds.Height - 106)),
+                Background = (SolidColorBrush)Application.Current.Resources["FlyoutBackgroundThemeBrush"]
             };
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            var titlePanel = new Grid { Margin = new Thickness(20, 16, 12, 8) };
+            var titlePanel = new Grid { Margin = new Thickness(24, 20, 16, 20) };
             titlePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             titlePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var title = new TextBlock
             {
                 Text = "Outline",
-                FontSize = 22,
-                FontWeight = FontWeights.SemiBold,
+                FontSize = 32,
+                FontWeight = FontWeights.Light,
                 VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(title, 0);
 
             var close = new Button
             {
-                Content = "x",
-                Width = 36,
-                Height = 36,
+                Content = new SymbolIcon(Symbol.Cancel),
+                Width = 44,
+                Height = 44,
                 Padding = new Thickness(0),
                 Background = new SolidColorBrush(Colors.Transparent),
                 BorderThickness = new Thickness(0)
             };
+            global::Windows.UI.Xaml.Automation.AutomationProperties.SetName(close, "Close outline");
             close.Click += (s, args) =>
             {
                 if (_outlinePopup != null)
@@ -2067,7 +2069,8 @@ namespace MetroMarkdownEditor.Windows
             {
                 var empty = new TextBlock
                 {
-                    Text = "No headings",
+                    Text = "No headings yet.\nAdd Markdown headings to navigate your document.",
+                    TextWrapping = TextWrapping.Wrap,
                     FontSize = 16,
                     Opacity = 0.7,
                     Margin = new Thickness(20, 28, 20, 28)
@@ -2082,7 +2085,7 @@ namespace MetroMarkdownEditor.Windows
                     ItemsSource = items,
                     IsItemClickEnabled = true,
                     SelectionMode = ListViewSelectionMode.None,
-                    Margin = new Thickness(8, 0, 8, 12),
+                    Margin = new Thickness(16, 0, 16, 20),
                     ItemTemplate = BuildOutlineItemTemplate()
                 };
                 list.ItemClick += OutlineList_ItemClick;
@@ -2095,15 +2098,30 @@ namespace MetroMarkdownEditor.Windows
                 Child = new Border
                 {
                     Child = panel,
-                    BorderBrush = new SolidColorBrush(Colors.Gray),
-                    BorderThickness = new Thickness(1)
+                    BorderBrush = (SolidColorBrush)Application.Current.Resources["ProgressBarForegroundThemeBrush"],
+                    BorderThickness = new Thickness(0, 3, 0, 0)
                 },
                 IsLightDismissEnabled = true
             };
 
-            var bounds = Window.Current.Bounds;
-            _outlinePopup.HorizontalOffset = Math.Max(12, bounds.Width - 440);
-            _outlinePopup.VerticalOffset = Math.Max(12, bounds.Height - panel.MaxHeight - 82);
+            var outlinePopup = _outlinePopup;
+            Action positionOutline = () =>
+            {
+                var currentBounds = Window.Current.Bounds;
+                panel.Width = Math.Min(420, Math.Max(1, currentBounds.Width - 26));
+                panel.MaxHeight = Math.Max(1, Math.Min(currentBounds.Height * 0.72, currentBounds.Height - 106));
+                outlinePopup.HorizontalOffset = Math.Max(12, currentBounds.Width - panel.Width - 14);
+                outlinePopup.VerticalOffset = Math.Max(12, currentBounds.Height - panel.ActualHeight - 84);
+            };
+            SizeChangedEventHandler outlineSizeChanged = (s, args) => positionOutline();
+            SizeChanged += outlineSizeChanged;
+            panel.SizeChanged += outlineSizeChanged;
+            outlinePopup.Closed += (s, args) =>
+            {
+                SizeChanged -= outlineSizeChanged;
+                panel.SizeChanged -= outlineSizeChanged;
+            };
+            positionOutline();
             _outlinePopup.IsOpen = true;
         }
 
@@ -2111,8 +2129,10 @@ namespace MetroMarkdownEditor.Windows
         {
             const string template =
                 "<DataTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">" +
-                "<Grid Padding=\"{Binding Indent}\" MinHeight=\"40\">" +
-                "<TextBlock Text=\"{Binding Title}\" FontSize=\"15\" TextTrimming=\"CharacterEllipsis\" VerticalAlignment=\"Center\"/>" +
+                "<Grid Margin=\"{Binding Indent}\" MinHeight=\"44\" Padding=\"0,8,8,8\">" +
+                "<Grid.ColumnDefinitions><ColumnDefinition Width=\"28\"/><ColumnDefinition Width=\"*\"/></Grid.ColumnDefinitions>" +
+                "<TextBlock Text=\"{Binding Level}\" FontSize=\"12\" Opacity=\"0.45\" VerticalAlignment=\"Center\"/>" +
+                "<TextBlock Grid.Column=\"1\" Text=\"{Binding Title}\" FontSize=\"17\" TextTrimming=\"CharacterEllipsis\" VerticalAlignment=\"Center\"/>" +
                 "</Grid>" +
                 "</DataTemplate>";
             return (DataTemplate)XamlReader.Load(template);
@@ -2247,31 +2267,34 @@ namespace MetroMarkdownEditor.Windows
             // 创建搜索弹窗内容
             var searchBox = new TextBox
             {
-                PlaceholderText = "Search...",
+                PlaceholderText = "Find in document",
+                FontSize = 18,
+                MinHeight = 44,
                 Text = _lastSearchText,
-                Width = 420,  // 1.5x 宽度
-                Margin = new Thickness(0, 0, 0, 12)
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 0, 0, 20)
             };
             searchBox.SelectAll();
 
             var findPrevButton = new Button
             {
-                Content = "← Find Previous",
-                Width = 195,  // 1.5x 宽度
+                Content = "Previous",
+                MinHeight = 44,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Margin = new Thickness(0, 0, 12, 0)
             };
 
             var findNextButton = new Button
             {
-                Content = "Find Next →",
-                Width = 195  // 1.5x 宽度
+                Content = "Next",
+                MinHeight = 44,
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            var buttonPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
+            var buttonPanel = new Grid();
+            buttonPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            buttonPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(findNextButton, 1);
             buttonPanel.Children.Add(findPrevButton);
             buttonPanel.Children.Add(findNextButton);
 
@@ -2285,40 +2308,55 @@ namespace MetroMarkdownEditor.Windows
             var titleBlock = new TextBlock
             {
                 Text = "Search",
-                FontSize = 20,
-                FontWeight = global::Windows.UI.Text.FontWeights.SemiBold,
+                FontSize = 32,
+                FontWeight = global::Windows.UI.Text.FontWeights.Light,
                 VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(titleBlock, 0);
 
             var closeButton = new Button
             {
-                Content = "✕",
-                FontSize = 14,
-                Width = 32,
-                Height = 32,
+                Content = new SymbolIcon(Symbol.Cancel),
+                Width = 44,
+                Height = 44,
                 Padding = new Thickness(0),
                 Background = new SolidColorBrush(Colors.Transparent),
                 BorderThickness = new Thickness(0)
             };
             Grid.SetColumn(closeButton, 1);
+            global::Windows.UI.Xaml.Automation.AutomationProperties.SetName(closeButton, "Close search");
+            global::Windows.UI.Xaml.Automation.AutomationProperties.SetName(searchBox, "Find in document");
 
             titlePanel.Children.Add(titleBlock);
             titlePanel.Children.Add(closeButton);
-            titlePanel.Margin = new Thickness(0, 0, 0, 12);
+            titlePanel.Margin = new Thickness(0, 0, 0, 24);
 
             contentPanel.Children.Add(titlePanel);
             contentPanel.Children.Add(searchBox);
             contentPanel.Children.Add(buttonPanel);
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "Enter · next match     Esc · close",
+                FontSize = 12,
+                Opacity = 0.6,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 16, 0, 0)
+            });
 
             // 使用 Border 包装 StackPanel 以支持 Padding 和 Border
             var contentBorder = new Border
             {
-                Padding = new Thickness(20),
-                Background = (SolidColorBrush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"],
-                BorderBrush = new SolidColorBrush(Colors.Gray),
-                BorderThickness = new Thickness(1),
-                Child = contentPanel
+                Padding = new Thickness(24),
+                Background = (SolidColorBrush)Application.Current.Resources["FlyoutBackgroundThemeBrush"],
+                BorderBrush = (SolidColorBrush)Application.Current.Resources["ProgressBarForegroundThemeBrush"],
+                BorderThickness = new Thickness(0, 3, 0, 0),
+                Child = new ScrollViewer
+                {
+                    Content = contentPanel,
+                    HorizontalScrollMode = ScrollMode.Disabled,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                }
             };
 
             var popup = new global::Windows.UI.Xaml.Controls.Primitives.Popup
@@ -2327,11 +2365,25 @@ namespace MetroMarkdownEditor.Windows
                 IsLightDismissEnabled = false  // 禁用点击外部关闭
             };
 
-            // 计算位置: 水平居中, 垂直位于 37.8% 处
-            var windowBounds = Window.Current.Bounds;
-            double dialogWidth = 510;  // 宽度增加到1.5倍
-            popup.HorizontalOffset = (windowBounds.Width - dialogWidth) / 2;
-            popup.VerticalOffset = windowBounds.Height * 0.378;
+            // Use the actual panel width, including its padding and border.
+            Action positionSearch = () =>
+            {
+                var windowBounds = Window.Current.Bounds;
+                contentBorder.Width = Math.Min(462, Math.Max(1, windowBounds.Width - 24));
+                contentBorder.MaxHeight = Math.Max(1, windowBounds.Height - 24);
+                popup.HorizontalOffset = Math.Max(12, (windowBounds.Width - contentBorder.Width) / 2);
+                popup.VerticalOffset = Math.Max(12, Math.Min(windowBounds.Height * 0.378,
+                    windowBounds.Height - contentBorder.ActualHeight - 12));
+            };
+            SizeChangedEventHandler searchSizeChanged = (s, args) => positionSearch();
+            SizeChanged += searchSizeChanged;
+            contentBorder.SizeChanged += searchSizeChanged;
+            popup.Closed += (s, args) =>
+            {
+                SizeChanged -= searchSizeChanged;
+                contentBorder.SizeChanged -= searchSizeChanged;
+            };
+            positionSearch();
 
             // 关闭按钮事件
             closeButton.Click += (s, args) =>
