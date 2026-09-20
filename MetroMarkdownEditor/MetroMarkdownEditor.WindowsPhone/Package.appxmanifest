@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/2010/manifest" xmlns:m2="http://schemas.microsoft.com/appx/2013/manifest" xmlns:m3="http://schemas.microsoft.com/appx/2014/manifest" xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest">
-  <Identity Name="e25b5fef-884c-4e0c-8fdb-81a720eeaae3" Publisher="CN=ben_l" Version="2.2.0.0" />
+  <Identity Name="e25b5fef-884c-4e0c-8fdb-81a720eeaae3" Publisher="CN=ben_l" Version="2.3.0.0" />
   <mp:PhoneIdentity PhoneProductId="e25b5fef-884c-4e0c-8fdb-81a720eeaae3" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
     <DisplayName>Mark::Blocks</DisplayName>

@@ -107,8 +107,10 @@ namespace MetroMarkdownEditor.ViewModels
 
             File = file;
             Title = file.Name;
+            var readWatch = System.Diagnostics.Stopwatch.StartNew();
             var text = await FileIO.ReadTextAsync(file);
             Content = await Task.Run(() => EditorPerformancePolicy.NormalizeText(text));
+            System.Diagnostics.Debug.WriteLine("Open/read+normalize: " + readWatch.ElapsedMilliseconds + " ms, chars=" + text.Length);
             IsDirty = false;
         }
 

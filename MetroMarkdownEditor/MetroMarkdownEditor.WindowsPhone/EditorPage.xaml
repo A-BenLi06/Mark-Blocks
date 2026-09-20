@@ -269,6 +269,7 @@
                              Padding="16,8,16,8"
                              TextChanged="EditorBox_TextChanged"
                              SelectionChanged="EditorBox_InputActivity"
+                             GotFocus="EditorBox_GotFocus"
                              LostFocus="EditorBox_LostFocus"
                              KeyDown="EditorBox_KeyDown" />
             </Border>
@@ -278,6 +279,7 @@
                     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                     Visibility="Collapsed">
                 <WebView x:Name="PreviewWebView"
+                         ScriptNotify="PreviewWebView_ScriptNotify"
                          NavigationCompleted="PreviewWebView_NavigationCompleted" />
             </Border>
         </Grid>

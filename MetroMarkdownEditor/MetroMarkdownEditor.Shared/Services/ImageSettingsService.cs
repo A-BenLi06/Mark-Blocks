@@ -39,6 +39,13 @@ namespace MetroMarkdownEditor.Services
         private string _customFolder = string.Empty;
         private string _picGoServerUrl = "http://127.0.0.1:36677";
         private string _picGoServerSecret = string.Empty;
+        private int _cacheLimitMegabytes = 128;
+
+        public int CacheLimitMegabytes
+        {
+            get { return _cacheLimitMegabytes; }
+            set { SetValue(ref _cacheLimitMegabytes, Math.Max(0, Math.Min(4096, value)), "CacheLimitMegabytes"); }
+        }
 
         public static ImageSettingsService Instance { get; } = new ImageSettingsService();
 
@@ -144,14 +151,13 @@ namespace MetroMarkdownEditor.Services
         {
             get
             {
-                return _applyRulesToLocalImages
-                    && _insertAction == ImageInsertAction.UploadImage
-                    && _uploader != ImageUploader.None;
+                return false; // Legacy desktop uploaders are unsupported in the Store sandbox.
             }
         }
 
         private void Load()
         {
+            _cacheLimitMegabytes = ReadInt("CacheLimitMegabytes", 128, 0, 4096);
             _insertAction = (ImageInsertAction)ReadInt("InsertAction", (int)_insertAction, 0, 5);
             _applyRulesToLocalImages = ReadBool("ApplyRulesToLocalImages", _applyRulesToLocalImages);
             _applyRulesToOnlineImages = ReadBool("ApplyRulesToOnlineImages", _applyRulesToOnlineImages);
@@ -165,11 +171,14 @@ namespace MetroMarkdownEditor.Services
             _customFolder = ReadString("CustomFolder", _customFolder);
             _picGoServerUrl = ReadString("PicGoServerUrl", _picGoServerUrl);
             _picGoServerSecret = ReadString("PicGoServerSecret", _picGoServerSecret);
+            if (_insertAction == ImageInsertAction.UploadImage) _insertAction = ImageInsertAction.NoSpecialAction;
+            _uploader = ImageUploader.None;
         }
 
         private void Save()
         {
             var settings = ApplicationData.Current.LocalSettings.Values;
+            settings[Prefix + "CacheLimitMegabytes"] = _cacheLimitMegabytes;
             settings[Prefix + "InsertAction"] = (int)_insertAction;
             settings[Prefix + "ApplyRulesToLocalImages"] = _applyRulesToLocalImages;
             settings[Prefix + "ApplyRulesToOnlineImages"] = _applyRulesToOnlineImages;

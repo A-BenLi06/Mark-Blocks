@@ -1,9 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/2010/manifest" xmlns:m2="http://schemas.microsoft.com/appx/2013/manifest">
-  <Identity Name="24dc1f2e-ae8d-45d7-ac6e-4ba609c0d5d2" Publisher="CN=ben_l" Version="2.2.0.0" />
+  <Identity Name="BenLi06.MarkBlocks" Publisher="CN=FC1FF585-22D6-4DFB-97E0-9D22B6842CC6" Version="2.3.0.0" />
   <Properties>
     <DisplayName>Mark::Blocks</DisplayName>
-    <PublisherDisplayName>ben_l</PublisherDisplayName>
+    <PublisherDisplayName>BenLi06</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Prerequisites>

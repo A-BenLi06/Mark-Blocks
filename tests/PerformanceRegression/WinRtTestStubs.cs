@@ -5,6 +5,16 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
+namespace MetroMarkdownEditor.Services
+{
+    // HTML fixture extraction only; the native local-stream resolver is built
+    // against the real 8.1 SDK and still requires device verification.
+    public static class PreviewResourceResolver
+    {
+        public static void Navigate(Windows.UI.Xaml.Controls.WebView view, string html) { view.NavigateToString(html); }
+    }
+}
+
 namespace Windows.UI.Xaml
 {
     public enum ElementTheme { Default, Light, Dark }

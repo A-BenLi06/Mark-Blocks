@@ -6,6 +6,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="ImageCacheTests.cs" />
+    <Compile Include="../../MetroMarkdownEditor/MetroMarkdownEditor.Shared/Services/OnlineImageCache.cs" Link="OnlineImageCache.cs" />
+    <Compile Include="../../MetroMarkdownEditor/MetroMarkdownEditor.Shared/Services/MarkdownSyntaxColorPlan.cs" Link="MarkdownSyntaxColorPlan.cs" />
     <Compile Include="WinRtTestStubs.cs" />
     <Compile Include="../../MetroMarkdownEditor/MetroMarkdownEditor.Shared/Services/EditorPerformancePolicy.cs" Link="EditorPerformancePolicy.cs" />
     <Compile Include="../../MetroMarkdownEditor/MetroMarkdownEditor.Shared/Services/PreviewPatchBuilder.cs" Link="PreviewPatchBuilder.cs" />

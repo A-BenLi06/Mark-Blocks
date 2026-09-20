@@ -25,6 +25,28 @@ class Program
     {
         SharedRoot = Path.GetFullPath("MetroMarkdownEditor/MetroMarkdownEditor.Shared");
         Directory.CreateDirectory("tests/PerformanceRegression/artifacts");
+        if (args.Length == 2 && args[0] == "--benchmark")
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            var source = await File.ReadAllTextAsync(args[1]);
+            Console.WriteLine("Read ms=" + timer.ElapsedMilliseconds + ", chars=" + source.Length);
+            var service = new MarkdownRenderService();
+            for (var pass = 0; pass < 3; pass++)
+            {
+                timer.Restart();
+                var result = await service.RenderMarkdownAsync(source, x => x);
+                Console.WriteLine("Parse pass=" + pass + ", ms=" + timer.ElapsedMilliseconds + ", blocks=" + result.Blocks.Count + ", html chars=" + result.Blocks.Sum(b => b.Html.Length) + ", libraries=" + result.Blocks.Aggregate(0, (flags, b) => flags | b.LibraryFeatures));
+                if (pass == 0)
+                {
+                    var benchmarkView = new WebView();
+                    await service.LoadSkeletonAsync(benchmarkView, "", ElementTheme.Light, result.Blocks);
+                    File.WriteAllText("tests/PerformanceRegression/artifacts/benchmark.html", benchmarkView.Html);
+                    var method = typeof(MarkdownRenderService).GetMethod("BuildPatchScript", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    File.WriteAllText("tests/PerformanceRegression/artifacts/benchmark-patch.js", (string)method.Invoke(null, new object[] { null, result.Blocks }));
+                }
+            }
+            return;
+        }
         // The standalone file fixture needs the same font assets as the app package.
         Directory.CreateDirectory("tests/PerformanceRegression/artifacts/fonts");
         foreach (var font in Directory.GetFiles(Path.Combine(SharedRoot, "Assets/KaTex/fonts")))
@@ -37,6 +59,48 @@ class Program
         Check(EditorPerformancePolicy.PreviewDelay(3000000, 10) > EditorPerformancePolicy.PreviewDelay(100, 10), "large documents receive longer quiet period");
 
         var renderer = new MarkdownRenderService();
+        await ImageCacheTests.RunAsync();
+        var colorText = "# 标题\n正文 **粗体** [链接](url)\n> 引用\n---\n";
+        var visibleWrites = new List<string>();
+        MarkdownSyntaxColorPlan.ApplyOutsideProtectedRange(0, 100, 30, 60, (start, end) => visibleWrites.Add(start + ":" + end));
+        Check(visibleWrites.SequenceEqual(new[] { "0:30", "60:100" }), "scroll colors both sides without touching active paragraph");
+        visibleWrites.Clear();
+        MarkdownSyntaxColorPlan.ApplyOutsideProtectedRange(35, 50, 30, 60, (start, end) => visibleWrites.Add(start + ":" + end));
+        Check(visibleWrites.Count == 0, "composition paragraph receives no formatting writes");
+        MarkdownSyntaxColorPlan.ApplyOutsideProtectedRange(100, 150, 30, 60, (start, end) => visibleWrites.Add(start + ":" + end));
+        Check(visibleWrites.Single() == "100:150", "offscreen caret does not block new visible content");
+        visibleWrites.Clear();
+        MarkdownSyntaxColorPlan.ApplyOutsideProtectedRange(0, 100, 0, 0, (start, end) => visibleWrites.Add(start + ":" + end));
+        Check(visibleWrites.Single() == "0:100", "focus loss permits full visible recoloring");
+        var colorRuns = MarkdownSyntaxColorPlan.Build(colorText);
+        var colors = new bool[colorText.Length];
+        var nextOffset = 0;
+        foreach (var run in colorRuns)
+        {
+            Check(run.Start == nextOffset && run.Length > 0, "color plan contiguous run at " + nextOffset);
+            for (var i = run.Start; i < run.Start + run.Length; i++) colors[i] = run.IsSyntax;
+            nextOffset += run.Length;
+        }
+        Check(nextOffset == colorText.Length, "color plan covers all body and syntax characters");
+        Check(colors[0] && !colors[2] && !colors[colorText.IndexOf("粗体")] && colors[colorText.IndexOf("**")],
+            "syntax markers are muted without recoloring heading and emphasis body");
+        Check(colors[colorText.IndexOf("[")] && !colors[colorText.IndexOf("链接")] && colors[colorText.IndexOf("(url)")],
+            "link markers and destination preserve link label color");
+        var bodyRuns = MarkdownSyntaxColorPlan.Build("中文正文\n222222");
+        Check(bodyRuns.Count == 1 && !bodyRuns[0].IsSyntax, "plain body produces one color-repair run");
+        Check(MarkdownSyntaxColorPlan.Build("").Count == 0, "empty color plan completes without native writes");
+        var denseRuns = MarkdownSyntaxColorPlan.Build(string.Concat(Enumerable.Repeat("**字** ", 1000)));
+        Check(denseRuns.Sum(r => r.Length) == 6000 && denseRuns.Last().Start + denseRuns.Last().Length == 6000,
+            "dense plan is complete before native application begins");
+        var applied = new List<MarkdownColorRun>();
+        var cursor = MarkdownSyntaxColorPlan.ApplyBatch(denseRuns, 0, applied.Add, () => true);
+        Check(cursor == 1 && cursor < denseRuns.Count, "budget yield retains incomplete progress");
+        while (cursor < denseRuns.Count)
+            cursor = MarkdownSyntaxColorPlan.ApplyBatch(denseRuns, cursor, applied.Add, () => true);
+        Check(applied.SequenceEqual(denseRuns), "resumed color batches apply every run once without erasing earlier work");
+        var writesAfterCompletion = 0;
+        MarkdownSyntaxColorPlan.ApplyBatch(denseRuns, cursor, r => writesAfterCompletion++, () => false);
+        Check(writesAfterCompletion == 0, "completed color plan requires no more native writes");
         var before = await renderer.RenderMarkdownAsync("# 标题\n\nfirst\n\nlast\n", x => x);
         var after = await renderer.RenderMarkdownAsync("\n# 标题\n\nfirst\n\nlast\n", x => x);
         Check(PreviewPatchBuilder.Build(before.Blocks, after.Blocks).Count == 0, "source line shifts do not rebuild content");

@@ -18,6 +18,9 @@
     <Compile Include="$(MSBuildThisFileDirectory)Common\BooleanToVisibilityConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Common\RelayCommand.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\EditorPerformancePolicy.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\OnlineImageCache.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\ImageCacheService.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\PreviewResourceResolver.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\PreviewPatchBuilder.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Converters\StringTruncateConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Converters\ViewModeToGridLengthConverter.cs" />
@@ -32,6 +35,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Services\ExportSettingsService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\AutoSaveService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownHighlightingHelper.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\MarkdownSyntaxColorPlan.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\BackgroundService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\BackgroundHistoryService.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Services\DevSettingsService.cs" />

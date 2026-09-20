@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -736,13 +736,18 @@ namespace MetroMarkdownEditor.Services
 #endif
             sb.Append("</body></html>");
             var bridge = new StringBuilder("(function(){var container=document.getElementById('content');");
-            AppendVisibleBlockProcessing(bridge, "container", true);
+            // Install helpers against an empty fragment. Visible work is scheduled
+            // only after preview-patches overrides the legacy full-DOM scanner.
+            bridge.Append("var empty=document.createElement('div');");
+            AppendVisibleBlockProcessing(bridge, "empty", false);
             bridge.Append("window.__mdPrepareFragment=function(block){");
             AppendFragmentEnhancements(bridge, "block");
             bridge.Append("var tables=block.getElementsByTagName('table');for(var i=tables.length-1;i>=0;i--){var table=tables[i];if(table.parentNode.className.indexOf('table-wrapper')<0){var wrapper=document.createElement('div');wrapper.className='table-wrapper';table.parentNode.insertBefore(wrapper,table);wrapper.appendChild(table);}}};})();");
             var patchScript = await ReadAssetFileAsync("Assets/preview-patches.js");
+            // Submit document content only after native NavigationCompleted.
+            // A sent navigation payload is not an acknowledgement of DOM display.
             sb.Insert(sb.Length - "</body></html>".Length, "<script>" + bridge + patchScript + "</script>");
-            webView.NavigateToString(sb.ToString());
+            PreviewResourceResolver.Navigate(webView, sb.ToString());
             await Task.FromResult(0);
         }
 

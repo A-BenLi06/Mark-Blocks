@@ -13,6 +13,10 @@ namespace MetroMarkdownEditor.Services
         public int Start { get; set; }
         public int End { get; set; }
         public bool IsValid { get; set; }
+        public System.Collections.Generic.List<MarkdownColorRun> Runs { get; set; }
+        public int NextRun { get; set; }
+        public int ProtectedStart { get; set; }
+        public int ProtectedEnd { get; set; }
         public string Text { get; set; }
         public Color BodyColor { get; set; }
         public Color SyntaxColor { get; set; }
@@ -30,7 +34,7 @@ namespace MetroMarkdownEditor.Services
 
         public static MarkdownHighlightRange HighlightVisible(
             RichEditBox editorBox,
-            MarkdownHighlightRange previousRange)
+            MarkdownHighlightRange previousRange, bool allowFocusedViewport = false)
         {
             if (editorBox == null || editorBox.Document == null)
             {
@@ -39,13 +43,25 @@ namespace MetroMarkdownEditor.Services
 
             var doc = editorBox.Document;
             // Windows 8.1 RichEditBox exposes no composition lifecycle events.
-            // A pause in pinyin is not an IME commit. Never alter native format
-            // runs while the editor owns focus; callers retry after LostFocus.
-            if (editorBox.FocusState != FocusState.Unfocused) return previousRange;
+            // A pause in pinyin is not an IME commit. Only viewport refreshes
+            // may run while focused, and those exclude the active paragraph.
+            var focused = editorBox.FocusState != FocusState.Unfocused;
+            if (focused && !allowFocusedViewport) return previousRange;
             // Formatting would discard the user's redo branch. Wait for a new edit.
             if (doc.CanRedo()) return previousRange;
             var selectionStart = doc.Selection.StartPosition;
             var selectionEnd = doc.Selection.EndPosition;
+            var protectedStart = 0;
+            var protectedEnd = 0;
+            if (focused)
+            {
+                // Exclude the whole active paragraph (or selected paragraphs),
+                // including its terminator. Never move the live selection.
+                var protectedRange = doc.GetRange(Math.Min(selectionStart, selectionEnd), Math.Max(selectionStart, selectionEnd));
+                protectedRange.Expand(TextRangeUnit.Paragraph);
+                protectedStart = protectedRange.StartPosition;
+                protectedEnd = Math.Max(protectedStart + 1, protectedRange.EndPosition);
+            }
             var bodyColor = GetBodyColor();
             var syntaxColor = GetSyntaxColor();
             var currentRange = GetVisibleRange(editorBox, selectionStart, selectionEnd);
@@ -53,67 +69,73 @@ namespace MetroMarkdownEditor.Services
             doc.GetRange(currentRange.Start, currentRange.End).GetText(TextGetOptions.None, out text);
             text = (text ?? string.Empty).TrimEnd('\0').Replace('\r', '\n');
             if (previousRange.IsValid && previousRange.Start == currentRange.Start && previousRange.End == currentRange.End
+                && previousRange.ProtectedStart == protectedStart && previousRange.ProtectedEnd == protectedEnd
                 && previousRange.BodyColor.Equals(bodyColor) && previousRange.SyntaxColor.Equals(syntaxColor)
                 && string.Equals(previousRange.Text, text, StringComparison.Ordinal)) return previousRange;
+            // A plan may be partially applied over several idle ticks. Only a
+            // completely applied plan can satisfy the cache hit above.
+            var samePlan = previousRange.Runs != null && previousRange.Start == currentRange.Start
+                && previousRange.ProtectedStart == protectedStart && previousRange.ProtectedEnd == protectedEnd
+                && previousRange.End == currentRange.End && previousRange.BodyColor.Equals(bodyColor)
+                && previousRange.SyntaxColor.Equals(syntaxColor) && previousRange.Text == text;
+            if (samePlan) currentRange = previousRange;
+            else
+            {
+                currentRange.IsValid = false;
+                currentRange.Text = text;
+                currentRange.BodyColor = bodyColor;
+                currentRange.SyntaxColor = syntaxColor;
+                currentRange.ProtectedStart = protectedStart;
+                currentRange.ProtectedEnd = protectedEnd;
+                try { currentRange.Runs = MarkdownSyntaxColorPlan.Build(text); }
+                catch (RegexMatchTimeoutException) { return new MarkdownHighlightRange(); }
+                currentRange.NextRun = 0;
+            }
             var displayUpdatesBatched = false;
             var undoGroupOpen = false;
-
             try
             {
                 doc.BatchDisplayUpdates();
                 displayUpdatesBatched = true;
                 doc.BeginUndoGroup();
                 undoGroupOpen = true;
-
-                if (previousRange.IsValid
-                    && (previousRange.Start != currentRange.Start || previousRange.End != currentRange.End))
+                var budget = System.Diagnostics.Stopwatch.StartNew();
+                var offset = currentRange.Start;
+                currentRange.NextRun = MarkdownSyntaxColorPlan.ApplyBatch(currentRange.Runs, currentRange.NextRun, run =>
                 {
-                    try
-                    {
-                        doc.GetRange(previousRange.Start, previousRange.End)
-                            .CharacterFormat.ForegroundColor = bodyColor;
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                if (text.Length > 0)
-                {
-                    currentRange.End = currentRange.Start + text.Length;
-                    doc.GetRange(currentRange.Start, currentRange.End)
-                        .CharacterFormat.ForegroundColor = bodyColor;
-                    ApplySyntaxRanges(doc, text, currentRange.Start, syntaxColor);
-                }
-
-                // Range formatting does not require reselecting the document.
-                // In particular, never recolor a Ctrl+A selection or move an IME caret.
-                if (selectionStart == selectionEnd && !doc.Selection.CharacterFormat.ForegroundColor.Equals(bodyColor))
+                    var color = run.IsSyntax ? syntaxColor : bodyColor;
+                    // A mixed-color range cannot be compared as a single color.
+                    MarkdownSyntaxColorPlan.ApplyOutsideProtectedRange(offset + run.Start, offset + run.Start + run.Length,
+                        protectedStart, protectedEnd, (start, end) => doc.GetRange(start, end).CharacterFormat.ForegroundColor = color);
+                }, () => budget.ElapsedMilliseconds >= 8);
+                if (!focused && selectionStart == selectionEnd && !doc.Selection.CharacterFormat.ForegroundColor.Equals(bodyColor))
                     doc.Selection.CharacterFormat.ForegroundColor = bodyColor;
-                currentRange.Text = text;
-                currentRange.BodyColor = bodyColor;
-                currentRange.SyntaxColor = syntaxColor;
-                currentRange.IsValid = true;
-                return currentRange;
+                currentRange.IsValid = currentRange.NextRun == currentRange.Runs.Count;
             }
             catch
             {
-                return previousRange;
+                // Native formatting may already have changed: never return an old
+                // valid cache or reuse a progress cursor after failure.
+                currentRange = new MarkdownHighlightRange();
             }
             finally
             {
-                if (undoGroupOpen)
+                try
                 {
-                    doc.EndUndoGroup();
+                    if (undoGroupOpen) doc.EndUndoGroup();
                 }
-
-                if (displayUpdatesBatched)
+                catch { currentRange = new MarkdownHighlightRange(); }
+                finally
                 {
-                    doc.ApplyDisplayUpdates();
+                    if (displayUpdatesBatched)
+                    {
+                        try { doc.ApplyDisplayUpdates(); }
+                        catch { currentRange = new MarkdownHighlightRange(); }
+                    }
                 }
             }
+            return currentRange;
         }
-
         private static MarkdownHighlightRange GetVisibleRange(
             RichEditBox editorBox,
             int selectionStart,
@@ -155,57 +177,19 @@ namespace MetroMarkdownEditor.Services
             };
         }
 
-        private static void ApplySyntaxRanges(
-            ITextDocument doc,
-            string text,
-            int offset,
-            Color syntaxColor)
+        public static void PrepareForInput(RichEditBox editorBox)
         {
-            var options = RegexOptions.Multiline;
-            var budget = System.Diagnostics.Stopwatch.StartNew();
-
-            foreach (Match match in Regex.Matches(text, @"(?:^|\n)(#{1,6})(?=\s)", options))
+            // Called on focus entry, before a new composition, never on each
+            // TextChanged/SelectionChanged. Do not recolor a selected text range.
+            var doc = editorBox.Document;
+            if (doc.CanRedo()) return;
+            var selection = doc.Selection;
+            if (selection.StartPosition == selection.EndPosition)
             {
-                if (budget.ElapsedMilliseconds >= 8) return;
-                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
+                var color = GetBodyColor();
+                if (!selection.CharacterFormat.ForegroundColor.Equals(color))
+                    selection.CharacterFormat.ForegroundColor = color;
             }
-
-            foreach (Match match in Regex.Matches(text, @"(!?\[)(.*?)(\])(\(.*?\))", options, TimeSpan.FromMilliseconds(20)))
-            {
-                if (budget.ElapsedMilliseconds >= 8) return;
-                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
-                ApplyGroup(doc, match.Groups[3], offset, syntaxColor);
-                ApplyGroup(doc, match.Groups[4], offset, syntaxColor);
-            }
-
-            foreach (Match match in Regex.Matches(text, @"(\*\*|__|\*|_|~~)(.+?)\1", options, TimeSpan.FromMilliseconds(20)))
-            {
-                if (budget.ElapsedMilliseconds >= 8) return;
-                var marker = match.Groups[1];
-                ApplyGroup(doc, marker, offset, syntaxColor);
-                var rightStart = offset + match.Index + match.Length - marker.Length;
-                doc.GetRange(rightStart, rightStart + marker.Length)
-                    .CharacterFormat.ForegroundColor = syntaxColor;
-            }
-
-            foreach (Match match in Regex.Matches(text, @"(?:^|\n)(>\s)", options))
-            {
-                if (budget.ElapsedMilliseconds >= 8) return;
-                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
-            }
-
-            foreach (Match match in Regex.Matches(text, @"(?:^|\n)(\-\-\-|\*\*\*)$", options))
-            {
-                if (budget.ElapsedMilliseconds >= 8) return;
-                ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
-            }
-        }
-
-        private static void ApplyGroup(ITextDocument doc, Group group, int offset, Color color)
-        {
-            if (group == null || !group.Success || group.Length == 0) return;
-            var start = offset + group.Index;
-            doc.GetRange(start, start + group.Length).CharacterFormat.ForegroundColor = color;
         }
 
         private static Color GetBodyColor()
@@ -223,7 +207,7 @@ namespace MetroMarkdownEditor.Services
         private static bool IsDarkTheme()
         {
             var root = Window.Current.Content as FrameworkElement;
-            return root != null
+            return root != null && root.RequestedTheme != ElementTheme.Default
                 ? root.RequestedTheme == ElementTheme.Dark
                 : Application.Current.RequestedTheme == ApplicationTheme.Dark;
         }

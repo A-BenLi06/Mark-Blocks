@@ -3,13 +3,10 @@ using System.Text;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Globalization;
 using Windows.ApplicationModel.DataTransfer;
-using Windows.Data.Json;
 using Windows.Storage;
 using MetroMarkdownEditor.Services;
 using MetroMarkdownEditor.ViewModels;
@@ -43,7 +40,7 @@ namespace MetroMarkdownEditor.Windows
         // 渲染服务：负责生成 HTML 和 CSS
         private readonly MarkdownRenderService _renderService = new MarkdownRenderService();
         private readonly MarkdownRenderService _backgroundRenderService = new MarkdownRenderService();
-        private readonly HttpClient _imageUploadHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+
         private readonly AutoSaveService _autoSave = AutoSaveService.Instance;
         
         // 锁标志位：防止在执行撤销/重做操作时，再次触发 TextChanged 事件导致死循环
@@ -63,6 +60,8 @@ namespace MetroMarkdownEditor.Windows
         private bool _isPreviewScrollRunning;
         private int _previewScrollFailureCount;
         private bool _pendingSyntaxRefresh;
+        private bool _pendingViewportHighlight;
+        private DateTime _lastEditorScrollUtc = DateTime.MinValue;
         private bool _pendingColdPreviewRefresh;
         private bool _pendingPreviewCssRefresh;
         private bool _pendingHiddenPreviewRefresh;
@@ -95,8 +94,8 @@ namespace MetroMarkdownEditor.Windows
         // 搜索功能状态变量
         private int _lastSearchIndex = -1;
         private string _lastSearchText = string.Empty;
-        private int _lastHighlightStart = -1;
-        private int _lastHighlightLength = 0;
+
+
         private global::Windows.UI.Xaml.Controls.Primitives.Popup _outlinePopup;
 
         // 便捷访问 ViewModel
@@ -190,15 +189,16 @@ namespace MetroMarkdownEditor.Windows
                 }
                 
                 // 初始化编辑器内容 (SyncEditorText 内部会调用 ResetUndoRedo)
-                SyncEditorText();
-                ViewModel.RefreshPreview();
+                if (!ReferenceEquals(_loadedEditorDocument, ViewModel.ActiveDocument))
+                {
+                    SyncEditorText();
+                    ViewModel.RefreshPreview();
+                }
             }
 
-            // 3. 初始渲染
-            await RenderPreviewAsync();
-            
-            // 4. 页面加载完成，最后再强制应用一次格式，确保万无一失
-            ApplyEditorFormatting();
+            // The prepared PreviewContent notification starts first navigation.
+            // Do not navigate an empty/stale skeleton while parsing is in flight.
+            // SetEditorTextWithoutNotification already applies formatting once.
             
             // 5. 注册全局快捷键监听（即使焦点不在编辑框也能触发）
             Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
@@ -213,6 +213,7 @@ namespace MetroMarkdownEditor.Windows
             FlushPendingEditorText(refreshPreview: false);
             _isPageActive = false;
             if (_previewCancellation != null) _previewCancellation.Cancel();
+            _highlightRange = new MarkdownHighlightRange();
             _editorRevision++;
 
             // 卸载监听，防止内存泄漏
@@ -343,8 +344,10 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private void OnEditorScrollViewerViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
         {
+            if (!_suppressEditorScrollSync) _lastEditorScrollUtc = DateTime.UtcNow;
             if (!e.IsIntermediate && !_suppressEditorScrollSync)
             {
+                _pendingViewportHighlight = true;
                 _pendingSyntaxRefresh = true;
                 _syntaxTimer.Stop();
                 _syntaxTimer.Start();
@@ -359,7 +362,7 @@ namespace MetroMarkdownEditor.Windows
             // 计算滚动比例 (0.0 - 1.0)
             var total = scroll.ScrollableHeight;
             var ratio = total > 0 ? scroll.VerticalOffset / total : 0;
-            if (Math.Abs(ratio - _pendingPreviewScrollRatio) < 0.002 && e.IsIntermediate)
+            if (Math.Abs(ratio - _pendingPreviewScrollRatio) * total < 1 && e.IsIntermediate)
             {
                 return;
             }
@@ -370,6 +373,7 @@ namespace MetroMarkdownEditor.Windows
 
             if (!e.IsIntermediate)
             {
+                _pendingViewportHighlight = true;
                 _pendingSyntaxRefresh = true;
                 _syntaxTimer.Stop();
                 _syntaxTimer.Start();
@@ -420,12 +424,6 @@ namespace MetroMarkdownEditor.Windows
 
             if (!_isWebViewReady || PreviewWebView == null) return;
             if (_isPreviewScrollRunning) return;
-            if (IsEditorKeyHeld() || (DateTime.UtcNow - _lastInputUtc).TotalMilliseconds < EditorPerformancePolicy.InputQuietMilliseconds)
-            {
-                _previewScrollTimer.Interval = TimeSpan.FromMilliseconds(EditorPerformancePolicy.InputQuietMilliseconds);
-                if (!_previewScrollTimer.IsEnabled) _previewScrollTimer.Start();
-                return;
-            }
             _previewScrollTimer.Interval = TimeSpan.FromMilliseconds(33);
             if (_isPreviewOperationRunning)
             {
@@ -871,7 +869,7 @@ namespace MetroMarkdownEditor.Windows
             }
 
             var imageSettings = ImageSettingsService.Instance;
-            var imageReferences = await TryUploadImagePathsWithPicGoAsync(imagePaths) ?? imagePaths;
+            var imageReferences = imagePaths;
             var markdownImages = imageReferences.Select(path => BuildMarkdownImageReference(path, imageSettings)).ToList();
 
             try
@@ -884,133 +882,6 @@ namespace MetroMarkdownEditor.Windows
             }
 
             return true;
-        }
-
-        private async Task<IReadOnlyList<string>> TryUploadImagePathsWithPicGoAsync(IReadOnlyList<string> imagePaths)
-        {
-            var settings = ImageSettingsService.Instance;
-            if (!settings.ShouldUploadLocalImages || imagePaths == null || imagePaths.Count == 0)
-            {
-                return null;
-            }
-
-            if (settings.Uploader != ImageUploader.PicGoCore && settings.Uploader != ImageUploader.PicList)
-            {
-                return null;
-            }
-
-            var uploadUri = BuildPicGoUploadUri(settings.PicGoServerUrl, settings.PicGoServerSecret);
-            if (uploadUri == null)
-            {
-                return null;
-            }
-
-            try
-            {
-                var payload = "{\"list\":[" + string.Join(",", imagePaths.Select(QuoteJsonString)) + "]}";
-                using (var request = new HttpRequestMessage(HttpMethod.Post, uploadUri))
-                {
-                    AddPicGoAuthHeaders(request, settings.PicGoServerSecret);
-                    request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
-
-                    var response = await _imageUploadHttpClient.SendAsync(request);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        return null;
-                    }
-
-                    var responseText = await response.Content.ReadAsStringAsync();
-                    var urls = ParsePicGoUploadResult(responseText);
-                    return urls != null && urls.Count == imagePaths.Count ? urls : null;
-                }
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static Uri BuildPicGoUploadUri(string serverUrl, string secret)
-        {
-            var value = string.IsNullOrWhiteSpace(serverUrl) ? "http://127.0.0.1:36677" : serverUrl.Trim();
-            if (!value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                && !value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                value = "http://" + value;
-            }
-
-            var queryStart = value.IndexOf('?');
-            var baseUrl = queryStart >= 0 ? value.Substring(0, queryStart) : value;
-            var query = queryStart >= 0 ? value.Substring(queryStart + 1) : string.Empty;
-            if (!baseUrl.TrimEnd('/').EndsWith("/upload", StringComparison.OrdinalIgnoreCase))
-            {
-                baseUrl = baseUrl.TrimEnd('/') + "/upload";
-            }
-
-            var trimmedSecret = (secret ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(trimmedSecret))
-            {
-                var encodedSecret = Uri.EscapeDataString(trimmedSecret);
-                var authQuery = "key=" + encodedSecret + "&secret=" + encodedSecret;
-                query = string.IsNullOrEmpty(query) ? authQuery : query + "&" + authQuery;
-            }
-
-            Uri uploadUri;
-            return Uri.TryCreate(string.IsNullOrEmpty(query) ? baseUrl : baseUrl + "?" + query, UriKind.Absolute, out uploadUri)
-                ? uploadUri
-                : null;
-        }
-
-        private static void AddPicGoAuthHeaders(HttpRequestMessage request, string secret)
-        {
-            var trimmedSecret = (secret ?? string.Empty).Trim();
-            if (request == null || string.IsNullOrEmpty(trimmedSecret))
-            {
-                return;
-            }
-
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", trimmedSecret);
-            request.Headers.TryAddWithoutValidation("X-PicGo-Secret", trimmedSecret);
-        }
-
-        private static IReadOnlyList<string> ParsePicGoUploadResult(string responseText)
-        {
-            JsonObject json;
-            if (!JsonObject.TryParse(responseText ?? string.Empty, out json))
-            {
-                return null;
-            }
-
-            IJsonValue successValue;
-            if (json.TryGetValue("success", out successValue)
-                && successValue.ValueType == JsonValueType.Boolean
-                && !successValue.GetBoolean())
-            {
-                return null;
-            }
-
-            IJsonValue resultValue;
-            if (!json.TryGetValue("result", out resultValue) || resultValue.ValueType != JsonValueType.Array)
-            {
-                return null;
-            }
-
-            var urls = new List<string>();
-            foreach (var item in resultValue.GetArray())
-            {
-                if (item.ValueType != JsonValueType.String)
-                {
-                    continue;
-                }
-
-                var url = item.GetString();
-                if (!string.IsNullOrWhiteSpace(url))
-                {
-                    urls.Add(url);
-                }
-            }
-
-            return urls;
         }
 
         private static bool IsSupportedImageFile(StorageFile file)
@@ -1068,52 +939,6 @@ namespace MetroMarkdownEditor.Windows
                 && !(path.Length > 1 && path[1] == ':');
         }
 
-        private static string QuoteJsonString(string value)
-        {
-            var builder = new StringBuilder();
-            builder.Append('"');
-            foreach (var ch in value ?? string.Empty)
-            {
-                switch (ch)
-                {
-                    case '\\':
-                        builder.Append("\\\\");
-                        break;
-                    case '"':
-                        builder.Append("\\\"");
-                        break;
-                    case '\b':
-                        builder.Append("\\b");
-                        break;
-                    case '\f':
-                        builder.Append("\\f");
-                        break;
-                    case '\n':
-                        builder.Append("\\n");
-                        break;
-                    case '\r':
-                        builder.Append("\\r");
-                        break;
-                    case '\t':
-                        builder.Append("\\t");
-                        break;
-                    default:
-                        if (char.IsControl(ch))
-                        {
-                            builder.Append("\\u");
-                            builder.Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
-                        }
-                        else
-                        {
-                            builder.Append(ch);
-                        }
-                        break;
-                }
-            }
-
-            builder.Append('"');
-            return builder.ToString();
-        }
 
         private static bool RequiresAngleBracketLinkDestination(string path)
         {
@@ -1146,7 +971,9 @@ namespace MetroMarkdownEditor.Windows
                 {
                     _isWebViewReady = false;
                     _lastBlocks = null;
-                    await _renderService.LoadSkeletonAsync(PreviewWebView, ViewModel.PreviewCss, theme, ViewModel.PreviewBlocks);
+                    var initialBlocks = ViewModel.PreviewBlocks;
+                    await _renderService.LoadSkeletonAsync(PreviewWebView, ViewModel.PreviewCss, theme, initialBlocks);
+                    // _lastBlocks stays null until the post-navigation patch is acknowledged.
                     _skeletonLoaded = true;
                     _lastTheme = theme;
                 }
@@ -1285,11 +1112,13 @@ namespace MetroMarkdownEditor.Windows
                 TryApplyAutoPairAtCaret(autoPairCharacter.Value);
             }
 
+            _highlightRange = new MarkdownHighlightRange();
             _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel.ActiveDocument;
             _dirtyEditorDocument.MarkEditorChanged();
             if (_previewCancellation != null) _previewCancellation.Cancel();
+            _pendingViewportHighlight = false;
             _lastInputUtc = DateTime.UtcNow;
             _typingTimer.Interval = TimeSpan.FromMilliseconds(EditorPerformancePolicy.PreviewDelay(_lastEditorText.Length, _lastPreviewWorkMilliseconds));
 
@@ -1483,9 +1312,19 @@ namespace MetroMarkdownEditor.Windows
                 _lastInputUtc = DateTime.UtcNow;
         }
 
+        private void EditorBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            var wasSuppressed = _suppressTextChanged;
+            _suppressTextChanged = true;
+            try { MarkdownHighlightingHelper.PrepareForInput(EditorBox); }
+            finally { _suppressTextChanged = wasSuppressed; }
+        }
         private void EditorBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (_isPageActive && _pendingSyntaxRefresh) _syntaxTimer.Start();
+            _pendingViewportHighlight = false;
+            _highlightRange = new MarkdownHighlightRange();
+            _pendingSyntaxRefresh = true;
+            if (_isPageActive) _syntaxTimer.Start();
         }
 
         private bool IsEditorKeyHeld()
@@ -1500,7 +1339,13 @@ namespace MetroMarkdownEditor.Windows
         private void SyntaxTimer_Tick(object sender, object e)
         {
             _syntaxTimer.Stop();
-            if (EditorBox.FocusState != FocusState.Unfocused) return;
+            if ((DateTime.UtcNow - _lastEditorScrollUtc).TotalMilliseconds < 180)
+            {
+                _syntaxTimer.Interval = TimeSpan.FromMilliseconds(180);
+                _syntaxTimer.Start();
+                return;
+            }
+            if (EditorBox.FocusState != FocusState.Unfocused && !_pendingViewportHighlight) return;
 
             // A queued tick can outlive Stop/Start; recheck quiet time before
             // native formatting, which can synchronously trigger RichEdit layout.
@@ -1528,7 +1373,7 @@ namespace MetroMarkdownEditor.Windows
             {
                 _suppressEditorScrollSync = true;
                 HighlightMarkdownSyntax(forceFullDocument: false);
-                _pendingSyntaxRefresh = false;
+                _pendingSyntaxRefresh = !_highlightRange.IsValid;
 
                 if (scroll != null && vertical.HasValue && Math.Abs(scroll.VerticalOffset - vertical.Value) >= 1)
                 {
@@ -1545,6 +1390,12 @@ namespace MetroMarkdownEditor.Windows
         {
             _typingTimer.Stop();
             if (!_isPageActive || _isPreviewParseRunning || !_pendingColdPreviewRefresh || ViewModel == null) return;
+            if ((DateTime.UtcNow - _lastEditorScrollUtc).TotalMilliseconds < 180)
+            {
+                _typingTimer.Interval = TimeSpan.FromMilliseconds(180);
+                _typingTimer.Start();
+                return;
+            }
             // Hidden previews do not require a native full-document snapshot.
             if (!(ShouldRenderPreview()) && !_pendingHiddenPreviewRefresh) return;
             if (IsEditorKeyHeld())
@@ -1596,6 +1447,7 @@ namespace MetroMarkdownEditor.Windows
             finally
             {
                 _lastPreviewWorkMilliseconds = watch.Elapsed.TotalMilliseconds;
+                System.Diagnostics.Debug.WriteLine("Open/preview parse: " + watch.ElapsedMilliseconds + " ms, chars=" + markdown.Length);
                 _isPreviewParseRunning = false;
                 if (_pendingColdPreviewRefresh && _isPageActive)
                 {
@@ -1747,8 +1599,10 @@ namespace MetroMarkdownEditor.Windows
                 _isUndoRedoLocked = false;
             }
 
+            _highlightRange = new MarkdownHighlightRange();
+            _pendingSyntaxRefresh = true;
+            if (_isPageActive && !EditorBox.Document.CanRedo()) _syntaxTimer.Start();
             if (!changedText) return;
-
             _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel != null ? ViewModel.ActiveDocument : null;
@@ -1756,7 +1610,7 @@ namespace MetroMarkdownEditor.Windows
             _lastEditorText = undoText;
             _editorTextDirty = false;
             _dirtyEditorDocument = null;
-            _pendingSyntaxRefresh = false;
+            _pendingSyntaxRefresh = true;
             if (ViewModel != null) ViewModel.RefreshPreview();
             UpdateEditorBottomSpacer();
         }
@@ -1804,6 +1658,7 @@ namespace MetroMarkdownEditor.Windows
 
             var content = await FileIO.ReadTextAsync(file);
 
+            _highlightRange = new MarkdownHighlightRange();
             _editorRevision++;
             _lastEditorText = NormalizeLineEndings(content);
             SetEditorTextWithoutNotification(content);
@@ -1848,6 +1703,7 @@ namespace MetroMarkdownEditor.Windows
             if (ViewModel != null && ViewModel.ActiveDocument != null && EditorBox != null)
             {
                 var text = ViewModel.ActiveDocument.Content ?? string.Empty;
+                _highlightRange = new MarkdownHighlightRange();
                 _editorRevision++;
                 _typingTimer.Stop();
                 _syntaxTimer.Stop();
@@ -1870,6 +1726,7 @@ namespace MetroMarkdownEditor.Windows
 
         private void SetEditorTextWithoutNotification(string text)
         {
+            var loadWatch = System.Diagnostics.Stopwatch.StartNew();
             _suppressTextChanged = true;
             var doc = EditorBox.Document;
             doc.UndoLimit = 0;
@@ -1886,6 +1743,7 @@ namespace MetroMarkdownEditor.Windows
                 doc.UndoLimit = 100;
                 _suppressTextChanged = false;
                 _pendingAutoPairCharacter = null;
+                System.Diagnostics.Debug.WriteLine("Open/editor SetText+format: " + loadWatch.ElapsedMilliseconds + " ms, chars=" + (text == null ? 0 : text.Length));
             }
         }
 
@@ -1899,7 +1757,7 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private void HighlightMarkdownSyntax(bool forceFullDocument)
         {
-            if (EditorBox.FocusState != FocusState.Unfocused)
+            if (EditorBox.FocusState != FocusState.Unfocused && !_pendingViewportHighlight)
             {
                 _pendingSyntaxRefresh = true;
                 return;
@@ -1909,7 +1767,16 @@ namespace MetroMarkdownEditor.Windows
             // edits and navigation all use the same bounded rendering path.
             var wasSuppressed = _suppressTextChanged;
             _suppressTextChanged = true;
-            try { _highlightRange = MarkdownHighlightingHelper.HighlightVisible(EditorBox, _highlightRange); }
+            try
+            {
+                _highlightRange = MarkdownHighlightingHelper.HighlightVisible(EditorBox, _highlightRange, _pendingViewportHighlight);
+                _pendingSyntaxRefresh = !_highlightRange.IsValid;
+                if (_pendingSyntaxRefresh && _highlightRange.Runs != null && !EditorBox.Document.CanRedo())
+                {
+                    _syntaxTimer.Interval = TimeSpan.FromMilliseconds(33);
+                    _syntaxTimer.Start();
+                }
+            }
             finally { _suppressTextChanged = wasSuppressed; }
         }
 
@@ -1955,8 +1822,21 @@ namespace MetroMarkdownEditor.Windows
         /// <summary>
         /// WebView 导航完成事件：用于初始化预览滚动位置
         /// </summary>
+        private async void PreviewWebView_ScriptNotify(object sender, NotifyEventArgs e)
+        {
+            if (!_isPageActive) return;
+            await ImageCacheService.HandleRequestAsync((WebView)sender, e.Value);
+        }
         private async void PreviewWebView_NavigationCompleted(WebView sender, WebViewNavigationCompletedEventArgs args)
         {
+            if (!args.IsSuccess)
+            {
+                _isWebViewReady = false;
+                _skeletonLoaded = false;
+                _lastBlocks = null;
+                System.Diagnostics.Debug.WriteLine("Preview navigation failed: " + args.WebErrorStatus);
+                return;
+            }
             _isWebViewReady = true;
             _lastPreviewScrollRatio = -1;
             _previewScrollFailureCount = 0;
@@ -2500,27 +2380,10 @@ namespace MetroMarkdownEditor.Windows
 
             if (foundIndex >= 0)
             {
-                // 清除上一次的高亮
-                if (_lastHighlightStart >= 0 && _lastHighlightLength > 0)
-                {
-                    try
-                    {
-                        var oldRange = EditorBox.Document.GetRange(_lastHighlightStart, _lastHighlightStart + _lastHighlightLength);
-                        oldRange.CharacterFormat.BackgroundColor = Colors.Transparent;
-                    }
-                    catch { /* 忽略索引越界 */ }
-                }
-                
+                // Native selection owns the match indication; do not persist
+                // search foreground/background colors into the Markdown document.
                 _lastSearchIndex = foundIndex;
-                _lastHighlightStart = foundIndex;
-                _lastHighlightLength = searchText.Length;
-                
                 var range = EditorBox.Document.GetRange(foundIndex, foundIndex + searchText.Length);
-                
-                // 高亮当前匹配的文本（黄色背景，黑色文字）
-                range.CharacterFormat.BackgroundColor = Colors.Yellow;
-                range.CharacterFormat.ForegroundColor = Colors.Black;
-                
                 range.ScrollIntoView(PointOptions.Start);
                 EditorBox.Document.Selection.SetRange(foundIndex, foundIndex + searchText.Length);
             }
