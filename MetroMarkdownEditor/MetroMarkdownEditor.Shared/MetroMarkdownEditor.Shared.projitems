@@ -17,6 +17,8 @@
     </Compile>
     <Compile Include="$(MSBuildThisFileDirectory)Common\BooleanToVisibilityConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Common\RelayCommand.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\EditorPerformancePolicy.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Services\PreviewPatchBuilder.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Converters\StringTruncateConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Converters\ViewModeToGridLengthConverter.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Converters\ViewModeToVisibilityConverter.cs" />
@@ -90,6 +92,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)Assets\highlight.js" />
+    <Content Include="$(MSBuildThisFileDirectory)Assets\preview-patches.js" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)Assets\KaTex\contrib\auto-render.min.js" />

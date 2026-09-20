@@ -13,6 +13,9 @@ namespace MetroMarkdownEditor.Services
         public int Start { get; set; }
         public int End { get; set; }
         public bool IsValid { get; set; }
+        public string Text { get; set; }
+        public Color BodyColor { get; set; }
+        public Color SyntaxColor { get; set; }
     }
 
     /// <summary>
@@ -23,6 +26,7 @@ namespace MetroMarkdownEditor.Services
     public static class MarkdownHighlightingHelper
     {
         private const int EditingMarginCharacters = 1024;
+        private const int MaximumHighlightCharacters = 8192;
 
         public static MarkdownHighlightRange HighlightVisible(
             RichEditBox editorBox,
@@ -34,11 +38,23 @@ namespace MetroMarkdownEditor.Services
             }
 
             var doc = editorBox.Document;
+            // Windows 8.1 RichEditBox exposes no composition lifecycle events.
+            // A pause in pinyin is not an IME commit. Never alter native format
+            // runs while the editor owns focus; callers retry after LostFocus.
+            if (editorBox.FocusState != FocusState.Unfocused) return previousRange;
+            // Formatting would discard the user's redo branch. Wait for a new edit.
+            if (doc.CanRedo()) return previousRange;
             var selectionStart = doc.Selection.StartPosition;
             var selectionEnd = doc.Selection.EndPosition;
             var bodyColor = GetBodyColor();
             var syntaxColor = GetSyntaxColor();
             var currentRange = GetVisibleRange(editorBox, selectionStart, selectionEnd);
+            string text;
+            doc.GetRange(currentRange.Start, currentRange.End).GetText(TextGetOptions.None, out text);
+            text = (text ?? string.Empty).TrimEnd('\0').Replace('\r', '\n');
+            if (previousRange.IsValid && previousRange.Start == currentRange.Start && previousRange.End == currentRange.End
+                && previousRange.BodyColor.Equals(bodyColor) && previousRange.SyntaxColor.Equals(syntaxColor)
+                && string.Equals(previousRange.Text, text, StringComparison.Ordinal)) return previousRange;
             var displayUpdatesBatched = false;
             var undoGroupOpen = false;
 
@@ -62,11 +78,6 @@ namespace MetroMarkdownEditor.Services
                     }
                 }
 
-                var range = doc.GetRange(currentRange.Start, currentRange.End);
-                string text;
-                range.GetText(TextGetOptions.None, out text);
-                text = (text ?? string.Empty).TrimEnd('\0').Replace('\r', '\n');
-
                 if (text.Length > 0)
                 {
                     currentRange.End = currentRange.Start + text.Length;
@@ -75,8 +86,13 @@ namespace MetroMarkdownEditor.Services
                     ApplySyntaxRanges(doc, text, currentRange.Start, syntaxColor);
                 }
 
-                doc.Selection.SetRange(selectionStart, selectionEnd);
-                doc.Selection.CharacterFormat.ForegroundColor = bodyColor;
+                // Range formatting does not require reselecting the document.
+                // In particular, never recolor a Ctrl+A selection or move an IME caret.
+                if (selectionStart == selectionEnd && !doc.Selection.CharacterFormat.ForegroundColor.Equals(bodyColor))
+                    doc.Selection.CharacterFormat.ForegroundColor = bodyColor;
+                currentRange.Text = text;
+                currentRange.BodyColor = bodyColor;
+                currentRange.SyntaxColor = syntaxColor;
                 currentRange.IsValid = true;
                 return currentRange;
             }
@@ -105,7 +121,7 @@ namespace MetroMarkdownEditor.Services
         {
             var doc = editorBox.Document;
             var start = Math.Max(0, Math.Min(selectionStart, selectionEnd));
-            var end = Math.Max(start, Math.Max(selectionStart, selectionEnd));
+            var end = start;
 
             try
             {
@@ -125,7 +141,7 @@ namespace MetroMarkdownEditor.Services
             {
             }
 
-            var result = doc.GetRange(start, end);
+            var result = doc.GetRange(start, Math.Min(end, start + MaximumHighlightCharacters));
             result.MoveStart(TextRangeUnit.Character, -EditingMarginCharacters);
             result.MoveEnd(TextRangeUnit.Character, EditingMarginCharacters);
             result.MoveStart(TextRangeUnit.Line, -1);
@@ -134,7 +150,7 @@ namespace MetroMarkdownEditor.Services
             return new MarkdownHighlightRange
             {
                 Start = Math.Max(0, result.StartPosition),
-                End = Math.Max(0, result.EndPosition),
+                End = Math.Max(0, Math.Min(result.EndPosition, result.StartPosition + MaximumHighlightCharacters)),
                 IsValid = true
             };
         }
@@ -146,21 +162,25 @@ namespace MetroMarkdownEditor.Services
             Color syntaxColor)
         {
             var options = RegexOptions.Multiline;
+            var budget = System.Diagnostics.Stopwatch.StartNew();
 
             foreach (Match match in Regex.Matches(text, @"(?:^|\n)(#{1,6})(?=\s)", options))
             {
+                if (budget.ElapsedMilliseconds >= 8) return;
                 ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
             }
 
-            foreach (Match match in Regex.Matches(text, @"(!?\[)(.*?)(\])(\(.*?\))", options))
+            foreach (Match match in Regex.Matches(text, @"(!?\[)(.*?)(\])(\(.*?\))", options, TimeSpan.FromMilliseconds(20)))
             {
+                if (budget.ElapsedMilliseconds >= 8) return;
                 ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
                 ApplyGroup(doc, match.Groups[3], offset, syntaxColor);
                 ApplyGroup(doc, match.Groups[4], offset, syntaxColor);
             }
 
-            foreach (Match match in Regex.Matches(text, @"(\*\*|__|\*|_|~~)(.+?)\1", options))
+            foreach (Match match in Regex.Matches(text, @"(\*\*|__|\*|_|~~)(.+?)\1", options, TimeSpan.FromMilliseconds(20)))
             {
+                if (budget.ElapsedMilliseconds >= 8) return;
                 var marker = match.Groups[1];
                 ApplyGroup(doc, marker, offset, syntaxColor);
                 var rightStart = offset + match.Index + match.Length - marker.Length;
@@ -170,11 +190,13 @@ namespace MetroMarkdownEditor.Services
 
             foreach (Match match in Regex.Matches(text, @"(?:^|\n)(>\s)", options))
             {
+                if (budget.ElapsedMilliseconds >= 8) return;
                 ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
             }
 
             foreach (Match match in Regex.Matches(text, @"(?:^|\n)(\-\-\-|\*\*\*)$", options))
             {
+                if (budget.ElapsedMilliseconds >= 8) return;
                 ApplyGroup(doc, match.Groups[1], offset, syntaxColor);
             }
         }

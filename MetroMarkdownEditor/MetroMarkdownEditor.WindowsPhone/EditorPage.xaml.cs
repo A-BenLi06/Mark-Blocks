@@ -47,6 +47,11 @@ namespace MetroMarkdownEditor.WindowsPhone
         private INotifyPropertyChanged _themeViewModel;
         private char? _pendingAutoPairCharacter;
         private int _editorRevision;
+        private int _previewRequestVersion;
+        private System.Threading.CancellationTokenSource _previewCancellation;
+        private DateTime _lastInputUtc = DateTime.MinValue;
+        private Windows.System.VirtualKey? _lastEditorKey;
+        private double _lastPreviewWorkMilliseconds;
         private bool _isPreviewParseRunning;
         private bool _isPageActive;
         private DocumentViewModel _loadedEditorDocument;
@@ -58,7 +63,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         private MarkdownHighlightRange _highlightRange;
         private bool _isPreviewOperationRunning;
         private bool _pendingPreviewDomUpdate;
-        private int _renderGeneration;
+        private IReadOnlyList<MarkdownBlock> _lastBlocks;
 
         // 搜索功能状态变量
         private int _lastSearchIndex = -1;
@@ -180,6 +185,7 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             FlushPendingEditorText(refreshPreview: false);
             _isPageActive = false;
+            if (_previewCancellation != null) _previewCancellation.Cancel();
             _editorRevision++;
             base.OnNavigatedFrom(e);
 
@@ -385,13 +391,19 @@ namespace MetroMarkdownEditor.WindowsPhone
         private void SetEditorTextWithoutNotification(string text)
         {
             _suppressTextChanged = true;
+            var doc = EditorBox.Document;
+            doc.UndoLimit = 0;
+            doc.BatchDisplayUpdates();
             try
             {
                 _highlightRange = new MarkdownHighlightRange();
-                EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
+                doc.SetText(TextSetOptions.None, text ?? string.Empty);
+                ApplyEditorFormatting();
             }
             finally
             {
+                doc.ApplyDisplayUpdates();
+                doc.UndoLimit = 100;
                 _suppressTextChanged = false;
                 _pendingAutoPairCharacter = null;
             }
@@ -399,7 +411,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private static string NormalizeLineEndings(string text)
         {
-            return (text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
+            return EditorPerformancePolicy.NormalizeText(text);
         }
 
         /// <summary>
@@ -480,6 +492,10 @@ namespace MetroMarkdownEditor.WindowsPhone
             _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel.ActiveDocument;
+            _dirtyEditorDocument.MarkEditorChanged();
+            if (_previewCancellation != null) _previewCancellation.Cancel();
+            _lastInputUtc = DateTime.UtcNow;
+            _typingTimer.Interval = TimeSpan.FromMilliseconds(EditorPerformancePolicy.PreviewDelay(_lastEditorText.Length, _lastPreviewWorkMilliseconds));
             _pendingPreviewRefresh = true;
             _pendingSyntaxRefresh = true;
 
@@ -491,8 +507,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             if (_autoSave.IsEnabled)
             {
-                _autoSaveTimer.Stop();
-                _autoSaveTimer.Start();
+                if (!_autoSaveTimer.IsEnabled) _autoSaveTimer.Start();
             }
 
             ScheduleCaretCenteringIfNeeded();
@@ -608,6 +623,7 @@ namespace MetroMarkdownEditor.WindowsPhone
 
                 var target = scrollViewer.VerticalOffset + rect.Top - (scrollViewer.ViewportHeight / 2) + rect.Height;
                 target = Math.Max(0, Math.Min(target, scrollViewer.ScrollableHeight));
+                if (Math.Abs(target - scrollViewer.VerticalOffset) < 1) return;
                 scrollViewer.ChangeView(null, target, null, true);
             }
             catch
@@ -617,6 +633,8 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private void EditorBox_KeyDown(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
+            _lastEditorKey = e.Key;
+            EditorBox_InputActivity(sender, e);
             _pendingAutoPairCharacter = null;
             HandleKeyDown(EditorBox, e);
         }
@@ -795,18 +813,14 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private static string NormalizeRichEditText(string text)
         {
-            var normalized = (text ?? string.Empty).TrimEnd('\0');
-            if (normalized.EndsWith("\r", StringComparison.Ordinal))
-            {
-                normalized = normalized.Substring(0, normalized.Length - 1);
-            }
-            return NormalizeLineEndings(normalized);
+            return EditorPerformancePolicy.NormalizeText(text, richEditTerminalMarker: true);
         }
 
         private string FlushPendingEditorText(bool refreshPreview)
         {
             if (!_editorTextDirty || _dirtyEditorDocument == null || EditorBox?.Document == null)
             {
+                if (refreshPreview && ViewModel != null) ViewModel.RefreshPreview();
                 return _lastEditorText ?? string.Empty;
             }
 
@@ -821,7 +835,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             }
             else
             {
-                _dirtyEditorDocument.Content = text;
+                _dirtyEditorDocument.CommitEditorText(text);
             }
 
             _lastEditorText = text;
@@ -839,6 +853,7 @@ namespace MetroMarkdownEditor.WindowsPhone
             FlushPendingEditorText(refreshPreview: false);
 
             var changedText = false;
+            string undoText = null;
             var before = _lastEditorText ?? string.Empty;
             _isUndoRedoLocked = true;
             try
@@ -859,6 +874,7 @@ namespace MetroMarkdownEditor.WindowsPhone
                     var current = GetNormalizedEditorText();
                     if (!string.Equals(current, before, StringComparison.Ordinal))
                     {
+                        undoText = current;
                         changedText = true;
                         break;
                     }
@@ -874,10 +890,11 @@ namespace MetroMarkdownEditor.WindowsPhone
             _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel?.ActiveDocument;
-            var text = FlushPendingEditorText(refreshPreview: false);
-            _lastEditorText = text;
-            _pendingSyntaxRefresh = true;
-            HighlightMarkdownSyntax();
+            if (_dirtyEditorDocument != null) _dirtyEditorDocument.CommitEditorText(undoText);
+            _lastEditorText = undoText;
+            _editorTextDirty = false;
+            _dirtyEditorDocument = null;
+            _pendingSyntaxRefresh = false;
             ViewModel?.RefreshPreview();
         }
 
@@ -885,10 +902,34 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         #region Timers
 
+        private void EditorBox_InputActivity(object sender, RoutedEventArgs e)
+        {
+            if (!_suppressTextChanged && EditorBox.FocusState != FocusState.Unfocused)
+                _lastInputUtc = DateTime.UtcNow;
+        }
+
+        private void EditorBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_isPageActive && _pendingSyntaxRefresh) _syntaxTimer.Start();
+        }
+
+        private bool IsEditorKeyHeld()
+        {
+            return _lastEditorKey.HasValue && EditorBox.FocusState != FocusState.Unfocused
+                && (Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(_lastEditorKey.Value)
+                    & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+        }
+
         private void SyntaxTimer_Tick(object sender, object e)
         {
             _syntaxTimer.Stop();
+            if (EditorBox.FocusState != FocusState.Unfocused) return;
             if (!_pendingSyntaxRefresh) return;
+            if (IsEditorKeyHeld() || (DateTime.UtcNow - _lastInputUtc).TotalMilliseconds < 650)
+            {
+                _syntaxTimer.Start();
+                return;
+            }
             if (_isPreviewParseRunning)
             {
                 _syntaxTimer.Start();
@@ -902,47 +943,64 @@ namespace MetroMarkdownEditor.WindowsPhone
         private async void TypingTimer_Tick(object sender, object e)
         {
             _typingTimer.Stop();
-            if (_isPreviewParseRunning) return;
-            if (!_pendingPreviewRefresh) return;
+            if (!_isPageActive || _isPreviewParseRunning || !_pendingPreviewRefresh || ViewModel == null) return;
+            // Hidden previews do not require a native full-document snapshot.
+            if (!(_currentViewMode == EditorViewMode.Preview) && !_pendingHiddenPreviewRefresh) return;
+            if (IsEditorKeyHeld())
+            {
+                _typingTimer.Interval = TimeSpan.FromMilliseconds(180);
+                _typingTimer.Start();
+                return;
+            }
+            if (_editorTextDirty)
+            {
+                var delay = EditorPerformancePolicy.PreviewDelay(_lastEditorText.Length, _lastPreviewWorkMilliseconds);
+                var remaining = delay - (DateTime.UtcNow - _lastInputUtc).TotalMilliseconds;
+                if (remaining > 0)
+                {
+                    _typingTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, remaining));
+                    _typingTimer.Start();
+                    return;
+                }
+            }
 
-            var document = ViewModel?.ActiveDocument;
+            var document = ViewModel.ActiveDocument;
+            if (document == null) return;
             var revision = _editorRevision;
+            var requestVersion = _previewRequestVersion;
             _pendingPreviewRefresh = false;
             var refreshCss = _pendingPreviewCssRefresh;
             _pendingPreviewCssRefresh = false;
-            var renderWhenHidden = _pendingHiddenPreviewRefresh;
             _pendingHiddenPreviewRefresh = false;
             var markdown = FlushPendingEditorText(refreshPreview: false);
-
-            if ((_currentViewMode != EditorViewMode.Preview && !renderWhenHidden) || document == null)
-            {
-                return;
-            }
-
             _isPreviewParseRunning = true;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var rendered = await Task.Run(() => _backgroundRenderService.RenderMarkdown(markdown));
-                if (_isPageActive
-                    && revision == _editorRevision
-                    && ReferenceEquals(document, ViewModel?.ActiveDocument)
+                if (_previewCancellation != null) _previewCancellation.Dispose();
+                _previewCancellation = new System.Threading.CancellationTokenSource();
+                var rendered = await ViewModel.RenderPreviewDocumentAsync(_backgroundRenderService, markdown, _previewCancellation.Token);
+                if (rendered != null && _isPageActive && revision == _editorRevision && requestVersion == _previewRequestVersion
+                    && ReferenceEquals(document, ViewModel.ActiveDocument)
                     && string.Equals(document.Content ?? string.Empty, markdown, StringComparison.Ordinal))
                 {
                     ViewModel.ApplyPreviewResult(rendered, refreshCss: refreshCss);
                 }
             }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("Background preview render failed: " + ex.Message);
             }
             finally
             {
+                _lastPreviewWorkMilliseconds = watch.Elapsed.TotalMilliseconds;
                 _isPreviewParseRunning = false;
                 if (_pendingPreviewRefresh && _isPageActive)
                 {
-                    var _ = Dispatcher.RunAsync(
-                        Windows.UI.Core.CoreDispatcherPriority.Low,
-                        () => TypingTimer_Tick(null, null));
+                    _pendingPreviewCssRefresh |= refreshCss;
+                    _typingTimer.Interval = TimeSpan.FromMilliseconds(EditorPerformancePolicy.PreviewDelay(_lastEditorText.Length, _lastPreviewWorkMilliseconds));
+                    _typingTimer.Start();
                 }
             }
         }
@@ -951,6 +1009,8 @@ namespace MetroMarkdownEditor.WindowsPhone
         {
             if (ViewModel?.ActiveDocument == null) return;
 
+            _previewRequestVersion++;
+            if (_previewCancellation != null) _previewCancellation.Cancel();
             _pendingPreviewRefresh = true;
             _pendingPreviewCssRefresh = _pendingPreviewCssRefresh || refreshCss;
             _pendingHiddenPreviewRefresh = true;
@@ -969,12 +1029,14 @@ namespace MetroMarkdownEditor.WindowsPhone
         private async void AutoSaveTimer_Tick(object sender, object e)
         {
             _autoSaveTimer.Stop();
-            if (!_autoSave.IsEnabled) return;
-            FlushPendingEditorText(refreshPreview: false);
-            if (ViewModel?.ActiveDocument?.File == null) return;
-            if (!ViewModel.ActiveDocument.IsDirty) return;
-
-            await ViewModel.AutoSaveAsync();
+            if (!_autoSave.IsEnabled || ViewModel == null || !_isPageActive) return;
+            try
+            {
+                FlushPendingEditorText(refreshPreview: false);
+                await ViewModel.AutoSaveAsync();
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Auto save failed: " + ex.Message); }
+            finally { if (_isPageActive) ConfigureAutoSaveTimer(); }
         }
 
         private void OnAutoSaveSettingsChanged(object sender, EventArgs e)
@@ -1002,7 +1064,6 @@ namespace MetroMarkdownEditor.WindowsPhone
 
             var targetWebView = _currentViewMode == EditorViewMode.Preview ? PreviewWebView : null;
             if (targetWebView == null) return;
-            var generation = ++_renderGeneration;
             if (_isPreviewOperationRunning)
             {
                 _pendingPreviewDomUpdate = true;
@@ -1017,10 +1078,11 @@ namespace MetroMarkdownEditor.WindowsPhone
                 var previewTheme = ThemeSvc != null ? ThemeSvc.PreviewTheme : PreviewThemeType.Grey;
                 ViewModel.SetTheme(theme);
 
-                if (!_skeletonLoaded || theme != _lastTheme || previewTheme != _lastPreviewTheme)
+                if (!_skeletonLoaded || theme != _lastTheme || previewTheme != _lastPreviewTheme || _renderService.NeedsLibraries(ViewModel.PreviewBlocks))
                 {
                     _isWebViewReady = false;
-                    await _renderService.LoadSkeletonAsync(targetWebView, BuildPhoneCss(), theme);
+                    _lastBlocks = null;
+                    await _renderService.LoadSkeletonAsync(targetWebView, BuildPhoneCss(), theme, ViewModel.PreviewBlocks);
                     _skeletonLoaded = true;
                     _lastTheme = theme;
                     _lastPreviewTheme = previewTheme;
@@ -1032,10 +1094,12 @@ namespace MetroMarkdownEditor.WindowsPhone
                     return;
                 }
 
-                if (generation == _renderGeneration)
-                {
-                    await _renderService.UpdateContentAsync(targetWebView, ViewModel.PreviewContent ?? "", isMarkdown: false);
-                }
+                var nextBlocks = ViewModel.PreviewBlocks ?? new List<MarkdownBlock>();
+                if (ReferenceEquals(_lastBlocks, nextBlocks)) return;
+                var applied = await _renderService.UpdateBlocksAsync(targetWebView, _lastBlocks, nextBlocks);
+                // Track what actually reached the DOM, even if a newer result queued meanwhile.
+                _lastBlocks = applied ? nextBlocks : null;
+
             }
             finally
             {
@@ -1111,7 +1175,15 @@ namespace MetroMarkdownEditor.WindowsPhone
 
         private void HighlightMarkdownSyntax()
         {
-            _highlightRange = MarkdownHighlightingHelper.HighlightVisible(EditorBox, _highlightRange);
+            if (EditorBox.FocusState != FocusState.Unfocused)
+            {
+                _pendingSyntaxRefresh = true;
+                return;
+            }
+            var wasSuppressed = _suppressTextChanged;
+            _suppressTextChanged = true;
+            try { _highlightRange = MarkdownHighlightingHelper.HighlightVisible(EditorBox, _highlightRange); }
+            finally { _suppressTextChanged = wasSuppressed; }
         }
 
         #endregion

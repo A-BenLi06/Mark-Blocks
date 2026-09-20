@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Threading;
 using Windows.Storage; 
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -46,12 +47,15 @@ namespace MetroMarkdownEditor.Services
         public int StartLine { get; set; }
         public int EndLine { get; set; }
         public string Text { get; set; }
+        public string InnerHtml { get; set; }
+        public int LibraryFeatures { get; set; }
         public string Html { get; set; }
     }
 
     public class MarkdownRenderService
     {
         private MarkdownPipeline _pipeline;
+        private int _loadedLibraryFeatures;
         private string _pipelineSignature;
 
         private static string _cachedJs = null;
@@ -172,11 +176,27 @@ namespace MetroMarkdownEditor.Services
             }
         }
 
-        public async Task LoadSkeletonAsync(WebView webView, string inlineCss, ElementTheme theme)
+        public bool NeedsLibraries(IReadOnlyList<MarkdownBlock> blocks)
+        {
+            return (GetLibraryFeatures(blocks) & ~_loadedLibraryFeatures) != 0;
+        }
+
+        private static int GetLibraryFeatures(IReadOnlyList<MarkdownBlock> blocks)
+        {
+            var features = 0;
+            if (blocks != null) foreach (var block in blocks) features |= block.LibraryFeatures;
+            return features;
+        }
+
+        public async Task LoadSkeletonAsync(WebView webView, string inlineCss, ElementTheme theme, IReadOnlyList<MarkdownBlock> blocks = null)
         {
             if (webView == null) return;
+            _loadedLibraryFeatures |= GetLibraryFeatures(blocks);
+            var needCode = (_loadedLibraryFeatures & 1) != 0;
+            var needMath = (_loadedLibraryFeatures & 2) != 0;
+            var needDiagrams = (_loadedLibraryFeatures & 4) != 0;
 
-            if (_cachedJs == null)
+            if (needCode && _cachedJs == null)
                 _cachedJs = await ReadAssetFileAsync("Assets/highlight.js");
 
             if (theme == ElementTheme.Dark && _cachedCssDark == null)
@@ -186,25 +206,25 @@ namespace MetroMarkdownEditor.Services
                 _cachedCssLight = await ReadAssetFileAsync("Assets/atom-one-light.css");
 
             // 加载本地 KaTeX
-            if (_cachedKatexCss == null)
+            if (needMath && _cachedKatexCss == null)
                 _cachedKatexCss = await ReadAssetFileAsync("Assets/KaTex/katex.min.css");
-            if (_cachedKatexJs == null)
+            if (needMath && _cachedKatexJs == null)
                 _cachedKatexJs = await ReadAssetFileAsync("Assets/KaTex/katex.min.js");
-            if (_cachedKatexAutoRender == null)
+            if (needMath && _cachedKatexAutoRender == null)
                 _cachedKatexAutoRender = await ReadAssetFileAsync("Assets/KaTex/contrib/auto-render.min.js");
 
             // 加载本地 Mermaid (with ES6 polyfills for IE11)
-            if (_cachedEs6Promise == null)
+            if (needDiagrams && _cachedEs6Promise == null)
                 _cachedEs6Promise = await ReadAssetFileAsync("Assets/Mermaid/es6-promise.auto.min.js");
             // REMOVED: core-js causes "Function.prototype.toString" errors in IE11
             // if (_cachedCoreJs == null)
             //     _cachedCoreJs = await ReadAssetFileAsync("Assets/Mermaid/core.min.js");
-            if (_cachedUrlPolyfill == null)
+            if (needDiagrams && _cachedUrlPolyfill == null)
                 _cachedUrlPolyfill = await ReadAssetFileAsync("Assets/Mermaid/url-polyfill.min.js");
             // REMOVED: regenerator-runtime not needed for Mermaid v7
             // if (_cachedRegeneratorRuntime == null)
             //     _cachedRegeneratorRuntime = await ReadAssetFileAsync("Assets/Mermaid/regenerator-runtime.js");
-            if (_cachedMermaidJs == null)
+            if (needDiagrams && _cachedMermaidJs == null)
                 _cachedMermaidJs = await ReadAssetFileAsync("Assets/Mermaid/mermaid7.min.js"); // 确保这里是 v7 版本
 
             string currentCssContent = (theme == ElementTheme.Dark) ? _cachedCssDark : _cachedCssLight;
@@ -430,7 +450,7 @@ namespace MetroMarkdownEditor.Services
 
             // === 本地 KaTeX CSS ===
             sb.Append("<style>");
-            sb.Append(_cachedKatexCss);
+            if (needMath) sb.Append(_cachedKatexCss);
             sb.Append("</style>");
 
             sb.Append("</head><body>");
@@ -438,9 +458,7 @@ namespace MetroMarkdownEditor.Services
 
             // === 1. Polyfills 注入 (IE11 核心修复) ===
             // 移除 core-js 和 regenerator-runtime 以避免 "Function.prototype.toString" 冲突
-            sb.Append("<script>" + _cachedEs6Promise + "</script>");
             // sb.Append("<script>" + _cachedCoreJs + "</script>"); // REMOVED: Conflicts with IE11
-            sb.Append("<script>" + _cachedUrlPolyfill + "</script>");
             // sb.Append("<script>" + _cachedRegeneratorRuntime + "</script>"); // REMOVED: Not needed for v7
 
             // === 2. SVG getBBox Polyfill for IE11 ===
@@ -637,15 +655,15 @@ namespace MetroMarkdownEditor.Services
             
             // 加载外部 polyfills（如果有）
             if (!string.IsNullOrEmpty(_cachedEs6Promise))
-                sb.Append("<script>" + _cachedEs6Promise + "</script>");
+                if (needDiagrams) sb.Append("<script>" + _cachedEs6Promise + "</script>");
             if (!string.IsNullOrEmpty(_cachedUrlPolyfill))
-                sb.Append("<script>" + _cachedUrlPolyfill + "</script>");
+                if (needDiagrams) sb.Append("<script>" + _cachedUrlPolyfill + "</script>");
             
             // === 4. Mermaid & Libraries ===
-            sb.Append("<script>" + _cachedMermaidJs + "</script>");
-            sb.Append("<script>" + _cachedKatexJs + "</script>");
-            sb.Append("<script>" + _cachedKatexAutoRender + "</script>");
-            sb.Append("<script>" + _cachedJs + "</script>");
+            if (needDiagrams) sb.Append("<script>" + _cachedMermaidJs + "</script>");
+            if (needMath) sb.Append("<script>" + _cachedKatexJs + "</script>");
+            if (needMath) sb.Append("<script>" + _cachedKatexAutoRender + "</script>");
+            if (needCode) sb.Append("<script>" + _cachedJs + "</script>");
 
             // Stable native scroll entry point; avoids allocating eval scripts during scroll sync.
             sb.Append(@"<script>
@@ -717,14 +735,83 @@ namespace MetroMarkdownEditor.Services
             </script>");
 #endif
             sb.Append("</body></html>");
+            var bridge = new StringBuilder("(function(){var container=document.getElementById('content');");
+            AppendVisibleBlockProcessing(bridge, "container", true);
+            bridge.Append("window.__mdPrepareFragment=function(block){");
+            AppendFragmentEnhancements(bridge, "block");
+            bridge.Append("var tables=block.getElementsByTagName('table');for(var i=tables.length-1;i>=0;i--){var table=tables[i];if(table.parentNode.className.indexOf('table-wrapper')<0){var wrapper=document.createElement('div');wrapper.className='table-wrapper';table.parentNode.insertBefore(wrapper,table);wrapper.appendChild(table);}}};})();");
+            var patchScript = await ReadAssetFileAsync("Assets/preview-patches.js");
+            sb.Insert(sb.Length - "</body></html>".Length, "<script>" + bridge + patchScript + "</script>");
             webView.NavigateToString(sb.ToString());
             await Task.FromResult(0);
         }
 
-        // ... RenderMarkdown 不需要改动 ...
+        public async Task<bool> UpdateBlocksAsync(WebView webView, IReadOnlyList<MarkdownBlock> previous, IReadOnlyList<MarkdownBlock> next)
+        {
+            if (webView == null || next == null) return false;
+            var script = await Task.Run(() => BuildPatchScript(previous, next));
+            try
+            {
+                var ack = await webView.InvokeScriptAsync("eval", new[] { script });
+                if (ack == "ok") return true;
+                if (previous != null)
+                {
+                    script = await Task.Run(() => BuildPatchScript(null, next));
+                    return await webView.InvokeScriptAsync("eval", new[] { script }) == "ok";
+                }
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Preview patch failed: " + ex.Message); }
+            return false;
+        }
+
+        private static string BuildPatchScript(IReadOnlyList<MarkdownBlock> previous, IReadOnlyList<MarkdownBlock> next)
+        {
+            var patches = PreviewPatchBuilder.Build(previous, next);
+            var script = new StringBuilder("window.__mdApplyPatches(");
+            script.Append(PreviewPatchBuilder.Serialize(patches)).Append(',').Append(previous == null ? 0 : previous.Count).Append(",[");
+            var reindexFrom = int.MaxValue;
+            foreach (var patch in patches)
+                if (patch.RemoveCount != patch.InsertCount) reindexFrom = Math.Min(reindexFrom, patch.Start);
+            var separator = false;
+            // Initial/replaced wrappers already carry their metadata. For a small
+            // edit, do not send or touch every unchanged DOM node just to renumber it.
+            for (var i = 0; previous != null && i < next.Count; i++)
+            {
+                if (i < reindexFrom && i < previous.Count && previous[i].StartLine == next[i].StartLine && previous[i].EndLine == next[i].EndLine) continue;
+                if (separator) script.Append(',');
+                separator = true;
+                script.Append('[').Append(i).Append(',').Append(next[i].StartLine).Append(',').Append(next[i].EndLine).Append(']');
+            }
+            return script.Append("],").Append(previous == null ? "true" : "false").Append(',').Append(next.Count).Append(");").ToString();
+        }
+
+        // A superseded preview returns null, never a partial document. Cancellation
+        // is routine during typing; do not throw on this hot path (including under
+        // the VS debugger). Actual rendering failures still fault the task.
+        public Task<MarkdownRenderResult> RenderMarkdownAsync(string markdown, Func<string, string> normalizeImages, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            // Capture mutable settings and the pipeline on the UI thread once.
+            var pipeline = GetPipeline();
+            var settings = MarkdownSettingsService.Instance;
+            var alerts = settings.GithubStyleAlert;
+            var language = settings.ApplyDefaultCodeLanguageWhen == DefaultCodeLanguageApplyMode.WhenAddCodeFencesViaMenubar
+                ? string.Empty : SanitizeCodeLanguage(settings.DefaultCodeLanguage);
+            return Task.Run(() => RenderMarkdownCore(markdown, pipeline,
+                html => normalizeImages(EnhanceHtmlFragment(html, alerts, language)), cancellationToken));
+        }
+
         public MarkdownRenderResult RenderMarkdown(string markdown)
         {
+            var result = RenderMarkdownCore(markdown, GetPipeline(), EnhanceHtmlFragment, CancellationToken.None);
+            result.Html = BuildHtmlFromBlocks(result.Blocks);
+            return result;
+        }
+
+        private MarkdownRenderResult RenderMarkdownCore(string markdown, MarkdownPipeline pipeline, Func<string, string> enhance, CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested) return null;
             var normalized = NormalizeNewLines(markdown ?? string.Empty);
+            if (cancellationToken.IsCancellationRequested) return null;
             if (normalized.Length == 0)
             {
                 return new MarkdownRenderResult
@@ -739,12 +826,13 @@ namespace MetroMarkdownEditor.Services
             // loose lists retain document-wide semantics. Rendering the already
             // resolved top-level AST nodes separately gives the WebView stable DOM
             // blocks without reparsing fragments on the UI thread.
-            var pipeline = GetPipeline();
             var document = Markdown.Parse(normalized, pipeline);
-            var blocks = BuildBlocksFromDocument(document, normalized, pipeline);
-            var html = BuildHtmlFromBlocks(blocks);
+            if (cancellationToken.IsCancellationRequested) return null;
+            var blocks = BuildBlocksFromDocument(document, normalized, pipeline, enhance, cancellationToken);
+            if (blocks == null || cancellationToken.IsCancellationRequested) return null;
             var outline = ExtractOutline(document, normalized, blocks);
-            return new MarkdownRenderResult { Html = html, Blocks = blocks, Outline = outline };
+            if (cancellationToken.IsCancellationRequested) return null;
+            return new MarkdownRenderResult { Blocks = blocks, Outline = outline };
         }
 
         // UpdateContentAsync：针对 Mermaid v7 简化渲染逻辑
@@ -866,10 +954,6 @@ namespace MetroMarkdownEditor.Services
             catch
             {
                 outline.Clear();
-            }
-
-            if (outline.Count == 0)
-            {
                 outline.AddRange(ExtractOutlineFallback(markdown, blocks));
             }
 
@@ -988,19 +1072,17 @@ namespace MetroMarkdownEditor.Services
 
         private static int FindBlockIndexForLine(IReadOnlyList<MarkdownBlock> blocks, int line)
         {
-            if (blocks == null)
+            if (blocks == null) return -1;
+            var low = 0;
+            var high = blocks.Count - 1;
+            while (low <= high)
             {
-                return -1;
+                var mid = low + (high - low) / 2;
+                var block = blocks[mid];
+                if (line < block.StartLine) high = mid - 1;
+                else if (line > block.EndLine) low = mid + 1;
+                else return block.Index;
             }
-
-            foreach (var block in blocks)
-            {
-                if (block.StartLine <= line && line <= block.EndLine)
-                {
-                    return block.Index;
-                }
-            }
-
             return -1;
         }
 
@@ -1151,7 +1233,7 @@ namespace MetroMarkdownEditor.Services
             script.Append("      for (var c = 0; c < codeBlocks.length; c++) {");
             script.Append("        var code = codeBlocks[c];");
             script.Append("        if (code.getAttribute('data-hljs-ready')) continue;");
-            script.Append("        hljs.highlightBlock(code);");
+            script.Append("        if ((code.textContent || '').length <= 50000) hljs.highlightBlock(code);");
             script.Append("        code.setAttribute('data-hljs-ready', 'true');");
             script.Append("      }");
             script.Append("    }");
@@ -1207,9 +1289,9 @@ namespace MetroMarkdownEditor.Services
             script.Append("    var blocks = window.__mdCollectBlocks(root);");
             script.Append("    if (!blocks.length) return 0;");
             script.Append("    var remaining = typeof budget === 'number' ? budget : window.__mdBlockBudget;");
-            script.Append("    var processed = 0;");
+            script.Append("    var processed = 0; var started = Date.now();");
             script.Append("    for (var b = 0; b < blocks.length; b++) {");
-            script.Append("      if (remaining <= 0) break;");
+            script.Append("      if (remaining <= 0 || (processed > 0 && Date.now() - started >= 8)) break;");
             script.Append("      var block = blocks[b];");
             script.Append("      if (block.getAttribute('data-heavy-ready') === 'true') continue;");
             script.Append("      if (!window.__mdIsNearViewport(block)) continue;");
@@ -1225,8 +1307,9 @@ namespace MetroMarkdownEditor.Services
             script.Append("    window.__mdVisibleBlockBudgetTimer = setTimeout(function() {");
             script.Append("      window.__mdVisibleBlockBudgetTimer = null;");
             script.Append("      var host = root || document.getElementById('content');");
+            script.Append("      window.__mdProcessVisibleImages(host);");
             script.Append("      var processed = window.__mdProcessVisibleBlocks(host, window.__mdBlockBudget);");
-            script.Append("      if (processed >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(host);");
+            script.Append("      if (processed > 0) window.__mdScheduleVisibleBlockPass(host);");
             script.Append("    }, 80);");
             script.Append("  };");
 
@@ -1249,7 +1332,7 @@ namespace MetroMarkdownEditor.Services
             script.Append("        var content = document.getElementById('content');");
             script.Append("        window.__mdProcessVisibleImages(content);");
             script.Append("        var processed = window.__mdProcessVisibleBlocks(content, window.__mdBlockBudget);");
-            script.Append("        if (processed >= window.__mdBlockBudget) window.__mdScheduleVisibleBlockPass(content);");
+            script.Append("        if (processed > 0) window.__mdScheduleVisibleBlockPass(content);");
             script.Append("      }, 60);");
             script.Append("    };");
             script.Append("    window.addEventListener('scroll', trigger);");
@@ -1269,6 +1352,7 @@ namespace MetroMarkdownEditor.Services
             script.Append("      if (!pre) continue;");
             script.Append("      if (").Append(showCodeLineNumbers).Append(") {");
             script.Append("        if (code.getAttribute('data-line-numbered') === 'true') continue;");
+            script.Append("        if ((code.textContent || '').length > 50000) continue;");
             script.Append("        var html = code.innerHTML || '';");
             script.Append("        var lines = html.replace(/\\n$/, '').split('\\n');");
             script.Append("        var out = '';");
@@ -1318,20 +1402,30 @@ namespace MetroMarkdownEditor.Services
 
         private string EnhanceHtmlFragment(string html)
         {
+            var settings = MarkdownSettingsService.Instance;
+            return EnhanceHtmlFragment(html, settings.GithubStyleAlert,
+                settings.ApplyDefaultCodeLanguageWhen == DefaultCodeLanguageApplyMode.WhenAddCodeFencesViaMenubar
+                ? string.Empty : SanitizeCodeLanguage(settings.DefaultCodeLanguage));
+        }
+
+        private static string EnhanceHtmlFragment(string html, bool alerts, string language)
+        {
             if (string.IsNullOrEmpty(html))
             {
                 return string.Empty;
             }
 
-            var settings = MarkdownSettingsService.Instance;
             var enhanced = html;
 
-            if (settings.GithubStyleAlert)
+            if (alerts)
             {
                 enhanced = EnhanceGithubAlerts(enhanced);
             }
 
-            enhanced = ApplyDefaultCodeLanguage(enhanced, settings);
+            if (!string.IsNullOrEmpty(language) && enhanced.IndexOf("<pre", StringComparison.Ordinal) >= 0)
+                enhanced = Regex.Replace(enhanced, "<pre><code(?![^>]*class=)([^>]*)>", "<pre><code class=\"language-" + language + "\"$1>", RegexOptions.IgnoreCase);
+
+            if (enhanced.IndexOf("<img", StringComparison.OrdinalIgnoreCase) < 0) return enhanced;
 
             return Regex.Replace(enhanced, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", m =>
             {
@@ -1426,7 +1520,9 @@ namespace MetroMarkdownEditor.Services
         private IReadOnlyList<MarkdownBlock> BuildBlocksFromDocument(
             MarkdownDocument document,
             string markdown,
-            MarkdownPipeline pipeline)
+            MarkdownPipeline pipeline,
+            Func<string, string> enhance,
+            CancellationToken cancellationToken)
         {
             var blocks = new List<MarkdownBlock>();
             if (document == null || document.Count == 0)
@@ -1442,29 +1538,31 @@ namespace MetroMarkdownEditor.Services
 
                 for (var i = 0; i < document.Count; i++)
                 {
+                    if (cancellationToken.IsCancellationRequested) return null;
                     var syntaxBlock = document[i];
-                    var renderedStart = rendered.Length;
+                    rendered.Clear();
                     renderer.Render(syntaxBlock);
                     writer.Flush();
 
-                    var innerHtml = rendered.ToString(renderedStart, rendered.Length - renderedStart);
-                    innerHtml = EnhanceHtmlFragment(innerHtml);
+                    var innerHtml = enhance(rendered.ToString());
+                    if (cancellationToken.IsCancellationRequested) return null;
 
                     var sourceStart = Math.Max(0, Math.Min(markdown.Length, syntaxBlock.Span.Start));
                     var sourceEnd = Math.Max(sourceStart, Math.Min(markdown.Length - 1, syntaxBlock.Span.End));
-                    var sourceLength = markdown.Length == 0 ? 0 : sourceEnd - sourceStart + 1;
-                    var sourceText = sourceLength > 0
-                        ? markdown.Substring(sourceStart, sourceLength)
-                        : string.Empty;
+                    var sourceLength = Math.Max(0, Math.Min(markdown.Length - sourceStart, sourceEnd - sourceStart + 1));
+
                     var startLine = Math.Max(0, syntaxBlock.Line);
 
                     var block = new MarkdownBlock
                     {
                         Index = blocks.Count,
                         StartLine = startLine,
-                        EndLine = startLine + CountNewLines(sourceText),
-                        Text = sourceText
+                        EndLine = startLine + CountNewLines(markdown, sourceStart, sourceLength)
                     };
+                    block.LibraryFeatures = (innerHtml.IndexOf("<code", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 0)
+                        | (innerHtml.IndexOf("class=\"math", StringComparison.OrdinalIgnoreCase) >= 0 ? 2 : 0)
+                        | (innerHtml.IndexOf("mermaid", StringComparison.OrdinalIgnoreCase) >= 0 ? 4 : 0);
+                    block.InnerHtml = innerHtml;
                     block.Html = WrapBlockHtml(block, innerHtml);
                     blocks.Add(block);
                 }
@@ -1473,11 +1571,11 @@ namespace MetroMarkdownEditor.Services
             return blocks;
         }
 
-        private static int CountNewLines(string text)
+        private static int CountNewLines(string text, int start, int length)
         {
             var count = 0;
             var value = text ?? string.Empty;
-            for (var i = 0; i < value.Length; i++)
+            for (var i = start; i < start + length; i++)
             {
                 if (value[i] == '\n') count++;
             }

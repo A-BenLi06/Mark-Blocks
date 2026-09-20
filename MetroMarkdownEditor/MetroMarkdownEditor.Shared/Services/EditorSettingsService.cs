@@ -216,7 +216,7 @@ namespace MetroMarkdownEditor.Services
 
         public string NormalizeLineEndings(string content)
         {
-            var normalized = (content ?? string.Empty).Replace("\r\n", "\n").Replace("\r", "\n");
+            var normalized = EditorPerformancePolicy.NormalizeText(content);
             return _defaultLineEnding == EditorDefaultLineEnding.CRLF
                 ? normalized.Replace("\n", "\r\n")
                 : normalized;
@@ -224,13 +224,26 @@ namespace MetroMarkdownEditor.Services
 
         public string NormalizeContentForSave(string content)
         {
-            var normalized = (content ?? string.Empty).Replace("\r\n", "\n").Replace("\r", "\n");
-            if (_prettyIndentation)
-            {
-                normalized = NormalizeMarkdownIndentation(normalized);
-            }
+            return NormalizeContentForSave(content, _prettyIndentation, GetIndentUnit(), _defaultLineEnding == EditorDefaultLineEnding.CRLF);
+        }
 
-            return NormalizeLineEndings(normalized);
+        public static string NormalizeContentForSave(string content, bool prettyIndentation, string indent, bool crlf)
+        {
+            var normalized = EditorPerformancePolicy.NormalizeText(content);
+            // Most Markdown contains no leading tabs. Avoid splitting every line.
+            if (prettyIndentation && (normalized.StartsWith("\t", StringComparison.Ordinal) || normalized.IndexOf("\n\t", StringComparison.Ordinal) >= 0))
+            {
+                var output = new StringBuilder(normalized.Length);
+                var lineStart = true;
+                foreach (var c in normalized)
+                {
+                    if (lineStart && c == '\t') { output.Append(indent); continue; }
+                    output.Append(c);
+                    lineStart = c == '\n';
+                }
+                normalized = output.ToString();
+            }
+            return crlf ? normalized.Replace("\n", "\r\n") : normalized;
         }
 
         public void TurnOffTypewriterFocusMode()

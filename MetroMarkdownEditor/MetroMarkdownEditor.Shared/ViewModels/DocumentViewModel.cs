@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using System.Threading;
 using MetroMarkdownEditor.Services;
 using Windows.Storage;
 
@@ -12,6 +13,22 @@ namespace MetroMarkdownEditor.ViewModels
         private bool _isDirty;
         private string _title = "Untitled";
         private string _token;
+        private long _revision;
+        private bool _hasPendingEditorChanges;
+        private readonly SemaphoreSlim _saveLock = new SemaphoreSlim(1, 1);
+
+        public void MarkEditorChanged()
+        {
+            _revision++;
+            _hasPendingEditorChanges = true;
+            IsDirty = true;
+        }
+
+        public void CommitEditorText(string text)
+        {
+            Content = text;
+            _hasPendingEditorChanges = false;
+        }
 
         public StorageFile File
         {
@@ -61,6 +78,7 @@ namespace MetroMarkdownEditor.ViewModels
                 if (_content != newValue)
                 {
                     _content = newValue;
+                    _revision++;
                     IsDirty = true;
                     RaisePropertyChanged();
                 }
@@ -89,23 +107,35 @@ namespace MetroMarkdownEditor.ViewModels
 
             File = file;
             Title = file.Name;
-            Content = await FileIO.ReadTextAsync(file);
+            var text = await FileIO.ReadTextAsync(file);
+            Content = await Task.Run(() => EditorPerformancePolicy.NormalizeText(text));
             IsDirty = false;
         }
 
         public async Task SaveAsync(StorageFile file = null)
         {
-            var target = file ?? File;
-            if (target == null)
+            await _saveLock.WaitAsync();
+            try
             {
-                throw new InvalidOperationException("No file specified to save.");
-            }
+                var target = file ?? File;
+                if (target == null)
+                {
+                    throw new InvalidOperationException("No file specified to save.");
+                }
 
-            var contentToSave = EditorSettingsService.Instance.NormalizeContentForSave(Content ?? string.Empty);
-            await FileIO.WriteTextAsync(target, contentToSave);
-            File = target;
-            Title = target.Name;
-            IsDirty = false;
+                var revision = _revision;
+                var snapshot = Content ?? string.Empty;
+                var settings = EditorSettingsService.Instance;
+                var prettyIndentation = settings.PrettyIndentation;
+                var indent = settings.IndentSizeOnSaveMode == EditorIndentSizeOnSave.Tab ? "\t" : new string(' ', settings.IndentSizeOnSave);
+                var crlf = settings.DefaultLineEnding == EditorDefaultLineEnding.CRLF;
+                var contentToSave = await Task.Run(() => EditorSettingsService.NormalizeContentForSave(snapshot, prettyIndentation, indent, crlf));
+                await FileIO.WriteTextAsync(target, contentToSave);
+                File = target;
+                Title = target.Name;
+                if (_revision == revision && !_hasPendingEditorChanges) IsDirty = false;
+            }
+            finally { _saveLock.Release(); }
         }
     }
 }

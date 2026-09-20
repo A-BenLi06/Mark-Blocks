@@ -307,6 +307,8 @@
                              Padding="30,24,30,24"
                              Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
                              TextChanged="EditorBox_TextChanged"
+                             SelectionChanged="EditorBox_InputActivity"
+                             LostFocus="EditorBox_LostFocus"
                              KeyDown="EditorBox_KeyDown" />
             </Border>
 

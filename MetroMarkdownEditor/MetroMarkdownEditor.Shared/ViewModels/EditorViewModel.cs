@@ -24,6 +24,9 @@ namespace MetroMarkdownEditor.ViewModels
         public const string PreviewRefreshRequestedPropertyName = "PreviewRefreshRequested";
 
         private DocumentViewModel _activeDocument;
+#if WINDOWS_PHONE_APP
+        private DocumentViewModel _savePickerDocument;
+#endif
         private EditorViewMode _viewMode = EditorViewMode.Split;
         private readonly ThemeService _themeService;
         private readonly RecentFileService _recentFiles;
@@ -118,7 +121,11 @@ namespace MetroMarkdownEditor.ViewModels
 
         public string PreviewContent
         {
-            get { return _previewContent; }
+            get
+            {
+                // Full HTML is only materialized for consumers that actually need it.
+                return _previewContent ?? (_previewContent = string.Concat(PreviewBlocks.Select(block => block.Html ?? string.Empty)));
+            }
             private set
             {
                 if (_previewContent != value)
@@ -289,7 +296,8 @@ namespace MetroMarkdownEditor.ViewModels
 
         public async Task SaveAsync()
         {
-            if (ActiveDocument == null)
+            var document = ActiveDocument;
+            if (document == null || IsSaving)
             {
                 return;
             }
@@ -301,16 +309,17 @@ namespace MetroMarkdownEditor.ViewModels
 
             try
             {
-                if (ActiveDocument.File == null)
+                if (document.File == null)
                 {
                     var savePicker = new FileSavePicker
                     {
                         SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-                        SuggestedFileName = ActiveDocument.Title
+                        SuggestedFileName = document.Title
                     };
                     savePicker.FileTypeChoices.Add("Markdown", new[] { ".md", ".markdown" });
                     savePicker.FileTypeChoices.Add("Text", new[] { ".txt" });
 #if WINDOWS_PHONE_APP
+                    _savePickerDocument = document;
                     savePicker.PickSaveFileAndContinue();
                     await Task.FromResult<object>(null);
                     // WP8.1 挂起前直接返回，finally 会执行并重置 IsSaving，这是正确的
@@ -323,17 +332,17 @@ namespace MetroMarkdownEditor.ViewModels
                         return;
                     }
 
-                    await ActiveDocument.SaveAsync(target);
+                    await document.SaveAsync(target);
                     var recentItem = await _recentFiles.TouchAsync(target);
-                    ActiveDocument.Token = recentItem != null ? recentItem.Token : null;
+                    document.Token = recentItem != null ? recentItem.Token : null;
                     saved = true;
 #endif
                 }
                 else
                 {
-                    await ActiveDocument.SaveAsync();
-                    var recentItem = await _recentFiles.TouchAsync(ActiveDocument.File);
-                    ActiveDocument.Token = recentItem != null ? recentItem.Token : ActiveDocument.Token;
+                    await document.SaveAsync();
+                    var recentItem = await _recentFiles.TouchAsync(document.File);
+                    document.Token = recentItem != null ? recentItem.Token : document.Token;
                     saved = true;
                 }
 
@@ -353,7 +362,8 @@ namespace MetroMarkdownEditor.ViewModels
 
         public async Task AutoSaveAsync()
         {
-            if (ActiveDocument == null || ActiveDocument.File == null || !ActiveDocument.IsDirty)
+            var document = ActiveDocument;
+            if (document == null || document.File == null || !document.IsDirty || IsSaving)
             {
                 return;
             }
@@ -361,9 +371,9 @@ namespace MetroMarkdownEditor.ViewModels
             IsSaving = true;
             try
             {
-                await ActiveDocument.SaveAsync();
-                var recentItem = await _recentFiles.TouchAsync(ActiveDocument.File);
-                ActiveDocument.Token = recentItem != null ? recentItem.Token : ActiveDocument.Token;
+                await document.SaveAsync();
+                var recentItem = await _recentFiles.TouchAsync(document.File);
+                document.Token = recentItem != null ? recentItem.Token : document.Token;
             }
             finally
             {
@@ -486,22 +496,17 @@ namespace MetroMarkdownEditor.ViewModels
                 PreviewCss = _themeService.BuildCss();
             }
 
-            if (rendered.Blocks != null)
-            {
-                foreach (var block in rendered.Blocks)
-                {
-                    if (block != null)
-                    {
-                        block.Html = NormalizeImageSourcesInHtml(block.Html);
-                    }
-                }
-            }
-
             PreviewBlocks = rendered.Blocks;
             OutlineItems = rendered.Outline;
-            PreviewContent = rendered.Blocks != null
-                ? string.Concat(rendered.Blocks.Where(block => block != null).Select(block => block.Html ?? string.Empty))
-                : NormalizeImageSourcesInHtml(rendered.Html);
+            _previewContent = null;
+            RaisePropertyChanged("PreviewContent");
+        }
+
+        public Task<MarkdownRenderResult> RenderPreviewDocumentAsync(MarkdownRenderService renderer, string markdown, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+        {
+            var baseFolder = ActiveDocument != null && ActiveDocument.File != null ? Path.GetDirectoryName(ActiveDocument.File.Path) : null;
+            var localFolder = ApplicationData.Current.LocalFolder.Path;
+            return renderer.RenderMarkdownAsync(markdown, html => NormalizeImageSourcesInHtml(html, baseFolder, localFolder), cancellationToken);
         }
 
         private string ConvertMarkdownToHtml(string markdown)
@@ -552,6 +557,12 @@ namespace MetroMarkdownEditor.ViewModels
 
         private string NormalizeImageSourcesInHtml(string html)
         {
+            var baseFolder = ActiveDocument != null && ActiveDocument.File != null ? Path.GetDirectoryName(ActiveDocument.File.Path) : null;
+            return NormalizeImageSourcesInHtml(html, baseFolder, ApplicationData.Current.LocalFolder.Path);
+        }
+
+        private static string NormalizeImageSourcesInHtml(string html, string baseFolder, string localFolder)
+        {
             if (string.IsNullOrEmpty(html))
             {
                 return string.Empty;
@@ -564,27 +575,23 @@ namespace MetroMarkdownEditor.ViewModels
                 return html;
             }
 
-            var normalized = Regex.Replace(html, "(<img[^>]*src=\")([^\"]*)(\"[^>]*>)", m =>
-            {
-                var prefix = m.Groups[1].Value;
-                var src = NormalizeImageSource(m.Groups[2].Value);
-                var suffix = m.Groups[3].Value;
-                return prefix + src + suffix;
-            });
-
-            return Regex.Replace(normalized, "<img([^>]*?)src=\"([^\"]*)\"([^>]*)>", m =>
-            {
-                var before = m.Groups[1].Value;
-                var src = m.Groups[2].Value;
-                var after = m.Groups[3].Value;
-
-                if (before.Contains("data-src=") || after.Contains("data-src="))
+            // Normalize the real lazy image URL, not only its placeholder src.
+            return Regex.Replace(html, "<img\\b[^>]*>", image => Regex.Replace(image.Value,
+                "(?<=\\s)(src|data-src|data-original-src)=\"([^\"]*)\"", attribute =>
                 {
-                    return m.Value;
-                }
-
-                return "<img loading=\"lazy\" decoding=\"async\" data-lazy-ready=\"true\" data-src=\"" + src + "\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==\"" + before + after + ">";
-            });
+                    var path = attribute.Groups[2].Value;
+                    if (!Uri.IsWellFormedUriString(path, UriKind.Absolute))
+                    {
+                        try
+                        {
+                            if (!string.IsNullOrEmpty(localFolder) && path.StartsWith(localFolder + "\\", StringComparison.OrdinalIgnoreCase))
+                                path = "ms-appdata:///local/" + path.Substring(localFolder.Length + 1).Replace("\\", "/");
+                            else if (!string.IsNullOrEmpty(baseFolder)) path = "file:///" + Path.Combine(baseFolder, path).Replace("\\", "/");
+                        }
+                        catch { }
+                    }
+                    return attribute.Groups[1].Value + "=\"" + path + "\"";
+                }, RegexOptions.IgnoreCase), RegexOptions.IgnoreCase);
         }
 
         private string BuildHighlightCss()
@@ -725,8 +732,8 @@ namespace MetroMarkdownEditor.ViewModels
             }
 
             _suppressPreviewUpdate = true;
-            ActiveDocument.Content = text ?? string.Empty;
-            _suppressPreviewUpdate = false;
+            try { ActiveDocument.CommitEditorText(text ?? string.Empty); }
+            finally { _suppressPreviewUpdate = false; }
         }
 
         public void RefreshPreview()
@@ -750,10 +757,14 @@ namespace MetroMarkdownEditor.ViewModels
         {
             if (args == null || args.File == null)
             {
+                _savePickerDocument = null;
                 _exportContent = null; // Also clear on cancellation
                 return;
             }
 
+            var document = _savePickerDocument ?? ActiveDocument;
+            _savePickerDocument = null;
+            if (document == null) return;
             IsSaving = true;
             SaveStatusText = "Saving...";
             var minDelay = Task.Delay(500);
@@ -776,11 +787,11 @@ namespace MetroMarkdownEditor.ViewModels
             else
             {
                 // This is a regular SAVE AS continuation.
-                await ActiveDocument.SaveAsync(args.File);
+                await document.SaveAsync(args.File);
             }
             
             var recentItem = await _recentFiles.TouchAsync(args.File);
-            ActiveDocument.Token = recentItem != null ? recentItem.Token : null;
+            document.Token = recentItem != null ? recentItem.Token : null;
 
             await minDelay;
             SaveStatusText = "Success";

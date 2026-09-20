@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -62,7 +62,6 @@ namespace MetroMarkdownEditor.Windows
         private bool _hasPendingPreviewScroll;
         private bool _isPreviewScrollRunning;
         private int _previewScrollFailureCount;
-        private int _renderGeneration;
         private bool _pendingSyntaxRefresh;
         private bool _pendingColdPreviewRefresh;
         private bool _pendingPreviewCssRefresh;
@@ -78,6 +77,11 @@ namespace MetroMarkdownEditor.Windows
         private DocumentViewModel _loadedEditorDocument;
         private char? _pendingAutoPairCharacter;
         private int _editorRevision;
+        private int _previewRequestVersion;
+        private System.Threading.CancellationTokenSource _previewCancellation;
+        private DateTime _lastInputUtc = DateTime.MinValue;
+        private global::Windows.System.VirtualKey? _lastEditorKey;
+        private double _lastPreviewWorkMilliseconds;
         private bool _isPreviewParseRunning;
         private bool _isPageActive;
         private MarkdownHighlightRange _highlightRange;
@@ -208,6 +212,7 @@ namespace MetroMarkdownEditor.Windows
         {
             FlushPendingEditorText(refreshPreview: false);
             _isPageActive = false;
+            if (_previewCancellation != null) _previewCancellation.Cancel();
             _editorRevision++;
 
             // 卸载监听，防止内存泄漏
@@ -338,6 +343,12 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private void OnEditorScrollViewerViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
         {
+            if (!e.IsIntermediate && !_suppressEditorScrollSync)
+            {
+                _pendingSyntaxRefresh = true;
+                _syntaxTimer.Stop();
+                _syntaxTimer.Start();
+            }
             if (ViewModel == null || ViewModel.ViewMode != EditorViewMode.Split) return;
             if (!_isWebViewReady || PreviewWebView == null) return;
             if (_suppressEditorScrollSync) return;
@@ -362,8 +373,9 @@ namespace MetroMarkdownEditor.Windows
                 _pendingSyntaxRefresh = true;
                 _syntaxTimer.Stop();
                 _syntaxTimer.Start();
-                _previewScrollTimer.Stop();
-                var _ = SyncPreviewScrollAsync(_pendingPreviewScrollRatio);
+                // Caret auto-scroll also raises final ViewChanged events. Keep
+                // script invocation out of RichEdit's input/layout event chain.
+                if (!_previewScrollTimer.IsEnabled) _previewScrollTimer.Start();
                 return;
             }
 
@@ -408,6 +420,13 @@ namespace MetroMarkdownEditor.Windows
 
             if (!_isWebViewReady || PreviewWebView == null) return;
             if (_isPreviewScrollRunning) return;
+            if (IsEditorKeyHeld() || (DateTime.UtcNow - _lastInputUtc).TotalMilliseconds < EditorPerformancePolicy.InputQuietMilliseconds)
+            {
+                _previewScrollTimer.Interval = TimeSpan.FromMilliseconds(EditorPerformancePolicy.InputQuietMilliseconds);
+                if (!_previewScrollTimer.IsEnabled) _previewScrollTimer.Start();
+                return;
+            }
+            _previewScrollTimer.Interval = TimeSpan.FromMilliseconds(33);
             if (_isPreviewOperationRunning)
             {
                 if (!_previewScrollTimer.IsEnabled) _previewScrollTimer.Start();
@@ -526,7 +545,7 @@ namespace MetroMarkdownEditor.Windows
             }
             else if (e.PropertyName == "ViewMode" && ShouldRenderPreview())
             {
-                var _ = RenderPreviewAsync();
+                QueuePreviewRefresh(refreshCss: false);
             }
         }
         
@@ -572,6 +591,8 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private async void EditorBox_KeyDown(object sender, global::Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
+            _lastEditorKey = e.Key;
+            EditorBox_InputActivity(sender, e);
             _pendingAutoPairCharacter = null;
             var ctrlState = global::Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(global::Windows.System.VirtualKey.Control);
             bool isCtrlPressed = (ctrlState & global::Windows.UI.Core.CoreVirtualKeyStates.Down) == global::Windows.UI.Core.CoreVirtualKeyStates.Down;
@@ -1106,7 +1127,6 @@ namespace MetroMarkdownEditor.Windows
         {
             if (ViewModel == null) return;
             if (!ShouldRenderPreview()) return;
-            var generation = ++_renderGeneration;
             if (_isPreviewOperationRunning)
             {
                 _pendingPreviewRenderRequest = true;
@@ -1122,10 +1142,11 @@ namespace MetroMarkdownEditor.Windows
                 ViewModel.SetTheme(theme);
 
                 // 如果骨架未加载或主题改变，重新加载基础 HTML/CSS
-                if (!_skeletonLoaded || theme != _lastTheme)
+                if (!_skeletonLoaded || theme != _lastTheme || _renderService.NeedsLibraries(ViewModel.PreviewBlocks))
                 {
                     _isWebViewReady = false;
-                    await _renderService.LoadSkeletonAsync(PreviewWebView, ViewModel.PreviewCss, theme);
+                    _lastBlocks = null;
+                    await _renderService.LoadSkeletonAsync(PreviewWebView, ViewModel.PreviewCss, theme, ViewModel.PreviewBlocks);
                     _skeletonLoaded = true;
                     _lastTheme = theme;
                 }
@@ -1137,42 +1158,11 @@ namespace MetroMarkdownEditor.Windows
                 }
 
                 var nextBlocks = ViewModel.PreviewBlocks ?? new List<MarkdownBlock>();
-                bool appliedBlockDiff = false;
+                if (ReferenceEquals(_lastBlocks, nextBlocks)) return;
+                var applied = await _renderService.UpdateBlocksAsync(PreviewWebView, _lastBlocks, nextBlocks);
+                // Track what actually reached the DOM, even if a newer result queued meanwhile.
+                _lastBlocks = applied ? nextBlocks : null;
 
-                if (_skeletonLoaded && CanApplyBlockDiff(_lastBlocks, nextBlocks))
-                {
-                    var changedBlocks = FindChangedBlocks(_lastBlocks, nextBlocks);
-                    if (changedBlocks.Count == 0)
-                    {
-                        _lastBlocks = nextBlocks;
-                        return;
-                    }
-
-                    if (changedBlocks.Count > 0 && changedBlocks.Count <= 4)
-                    {
-                        foreach (var block in changedBlocks)
-                        {
-                            if (generation != _renderGeneration)
-                            {
-                                return;
-                            }
-
-                            await _renderService.UpdateBlockAsync(PreviewWebView, block);
-                        }
-
-                        appliedBlockDiff = true;
-                    }
-                }
-
-                if (!appliedBlockDiff)
-                {
-                    await _renderService.UpdateContentAsync(PreviewWebView, ViewModel.PreviewContent ?? string.Empty, isMarkdown: false);
-                }
-
-                if (generation == _renderGeneration)
-                {
-                    _lastBlocks = nextBlocks;
-                }
             }
             finally
             {
@@ -1298,6 +1288,10 @@ namespace MetroMarkdownEditor.Windows
             _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel.ActiveDocument;
+            _dirtyEditorDocument.MarkEditorChanged();
+            if (_previewCancellation != null) _previewCancellation.Cancel();
+            _lastInputUtc = DateTime.UtcNow;
+            _typingTimer.Interval = TimeSpan.FromMilliseconds(EditorPerformancePolicy.PreviewDelay(_lastEditorText.Length, _lastPreviewWorkMilliseconds));
 
             _pendingSyntaxRefresh = true;
             _pendingColdPreviewRefresh = true;
@@ -1308,8 +1302,7 @@ namespace MetroMarkdownEditor.Windows
 
             if (_autoSave.IsEnabled)
             {
-                _autoSaveTimer.Stop();
-                _autoSaveTimer.Start();
+                if (!_autoSaveTimer.IsEnabled) _autoSaveTimer.Start();
             }
 
             ScheduleCaretCenteringIfNeeded();
@@ -1448,6 +1441,7 @@ namespace MetroMarkdownEditor.Windows
 
                 var target = scrollViewer.VerticalOffset + rect.Top - (scrollViewer.ViewportHeight / 2) + rect.Height;
                 target = Math.Max(0, Math.Min(target, scrollViewer.ScrollableHeight));
+                if (Math.Abs(target - scrollViewer.VerticalOffset) < 1) return;
                 scrollViewer.ChangeView(null, target, null, true);
             }
             catch
@@ -1458,13 +1452,14 @@ namespace MetroMarkdownEditor.Windows
         private async void AutoSaveTimer_Tick(object sender, object e)
         {
             _autoSaveTimer.Stop();
-            if (!_autoSave.IsEnabled || ViewModel == null) return;
-
-            FlushPendingEditorText(refreshPreview: false);
-            if (ViewModel.ActiveDocument == null || ViewModel.ActiveDocument.File == null) return;
-
-            await ViewModel.AutoSaveAsync();
-            ConfigureAutoSaveTimer();
+            if (!_autoSave.IsEnabled || ViewModel == null || !_isPageActive) return;
+            try
+            {
+                FlushPendingEditorText(refreshPreview: false);
+                await ViewModel.AutoSaveAsync();
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Auto save failed: " + ex.Message); }
+            finally { if (_isPageActive) ConfigureAutoSaveTimer(); }
         }
 
         private void OnAutoSaveSettingsChanged(object sender, EventArgs e)
@@ -1476,15 +1471,44 @@ namespace MetroMarkdownEditor.Windows
         {
             _autoSaveTimer.Stop();
             _autoSaveTimer.Interval = TimeSpan.FromMinutes(_autoSave.FrequencyMinutes);
-            if (_autoSave.IsEnabled && _editorTextDirty)
+            if (_autoSave.IsEnabled && (_editorTextDirty || (ViewModel != null && ViewModel.ActiveDocument != null && ViewModel.ActiveDocument.IsDirty)))
             {
                 _autoSaveTimer.Start();
             }
         }
 
+        private void EditorBox_InputActivity(object sender, RoutedEventArgs e)
+        {
+            if (!_suppressTextChanged && EditorBox.FocusState != FocusState.Unfocused)
+                _lastInputUtc = DateTime.UtcNow;
+        }
+
+        private void EditorBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_isPageActive && _pendingSyntaxRefresh) _syntaxTimer.Start();
+        }
+
+        private bool IsEditorKeyHeld()
+        {
+            // Query current state instead of relying on KeyUp: focus changes can
+            // deliver the release elsewhere. Covers the initial key-repeat delay.
+            return _lastEditorKey.HasValue && EditorBox.FocusState != FocusState.Unfocused
+                && (global::Windows.UI.Core.CoreWindow.GetForCurrentThread().GetKeyState(_lastEditorKey.Value)
+                    & global::Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+        }
+
         private void SyntaxTimer_Tick(object sender, object e)
         {
             _syntaxTimer.Stop();
+            if (EditorBox.FocusState != FocusState.Unfocused) return;
+
+            // A queued tick can outlive Stop/Start; recheck quiet time before
+            // native formatting, which can synchronously trigger RichEdit layout.
+            if (_pendingSyntaxRefresh && (IsEditorKeyHeld() || (DateTime.UtcNow - _lastInputUtc).TotalMilliseconds < 650))
+            {
+                _syntaxTimer.Start();
+                return;
+            }
 
             if (!_pendingSyntaxRefresh)
             {
@@ -1506,7 +1530,7 @@ namespace MetroMarkdownEditor.Windows
                 HighlightMarkdownSyntax(forceFullDocument: false);
                 _pendingSyntaxRefresh = false;
 
-                if (scroll != null && vertical.HasValue)
+                if (scroll != null && vertical.HasValue && Math.Abs(scroll.VerticalOffset - vertical.Value) >= 1)
                 {
                     scroll.ChangeView(null, vertical, null, true);
                 }
@@ -1520,53 +1544,64 @@ namespace MetroMarkdownEditor.Windows
         private async void TypingTimer_Tick(object sender, object e)
         {
             _typingTimer.Stop();
-
-            if (_isPreviewParseRunning)
+            if (!_isPageActive || _isPreviewParseRunning || !_pendingColdPreviewRefresh || ViewModel == null) return;
+            // Hidden previews do not require a native full-document snapshot.
+            if (!(ShouldRenderPreview()) && !_pendingHiddenPreviewRefresh) return;
+            if (IsEditorKeyHeld())
             {
+                _typingTimer.Interval = TimeSpan.FromMilliseconds(180);
+                _typingTimer.Start();
                 return;
             }
-
-            if (_pendingColdPreviewRefresh && ViewModel != null)
+            if (_editorTextDirty)
             {
-                var document = ViewModel.ActiveDocument;
-                var revision = _editorRevision;
-                _pendingColdPreviewRefresh = false;
-                var refreshCss = _pendingPreviewCssRefresh;
-                _pendingPreviewCssRefresh = false;
-                var renderWhenHidden = _pendingHiddenPreviewRefresh;
-                _pendingHiddenPreviewRefresh = false;
-                var markdown = FlushPendingEditorText(refreshPreview: false);
-
-                if ((!ShouldRenderPreview() && !renderWhenHidden) || document == null)
+                var delay = EditorPerformancePolicy.PreviewDelay(_lastEditorText.Length, _lastPreviewWorkMilliseconds);
+                var remaining = delay - (DateTime.UtcNow - _lastInputUtc).TotalMilliseconds;
+                if (remaining > 0)
                 {
+                    _typingTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, remaining));
+                    _typingTimer.Start();
                     return;
                 }
+            }
 
-                _isPreviewParseRunning = true;
-                try
+            var document = ViewModel.ActiveDocument;
+            if (document == null) return;
+            var revision = _editorRevision;
+            var requestVersion = _previewRequestVersion;
+            _pendingColdPreviewRefresh = false;
+            var refreshCss = _pendingPreviewCssRefresh;
+            _pendingPreviewCssRefresh = false;
+            _pendingHiddenPreviewRefresh = false;
+            var markdown = FlushPendingEditorText(refreshPreview: false);
+            _isPreviewParseRunning = true;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                if (_previewCancellation != null) _previewCancellation.Dispose();
+                _previewCancellation = new System.Threading.CancellationTokenSource();
+                var rendered = await ViewModel.RenderPreviewDocumentAsync(_backgroundRenderService, markdown, _previewCancellation.Token);
+                if (rendered != null && _isPageActive && revision == _editorRevision && requestVersion == _previewRequestVersion
+                    && ReferenceEquals(document, ViewModel.ActiveDocument)
+                    && string.Equals(document.Content ?? string.Empty, markdown, StringComparison.Ordinal))
                 {
-                    var rendered = await Task.Run(() => _backgroundRenderService.RenderMarkdown(markdown));
-                    if (_isPageActive
-                        && revision == _editorRevision
-                        && ReferenceEquals(document, ViewModel.ActiveDocument)
-                        && string.Equals(document.Content ?? string.Empty, markdown, StringComparison.Ordinal))
-                    {
-                        ViewModel.ApplyPreviewResult(rendered, refreshCss: refreshCss);
-                    }
+                    ViewModel.ApplyPreviewResult(rendered, refreshCss: refreshCss);
                 }
-                catch (Exception ex)
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Background preview render failed: " + ex.Message);
+            }
+            finally
+            {
+                _lastPreviewWorkMilliseconds = watch.Elapsed.TotalMilliseconds;
+                _isPreviewParseRunning = false;
+                if (_pendingColdPreviewRefresh && _isPageActive)
                 {
-                    System.Diagnostics.Debug.WriteLine("Background preview render failed: " + ex.Message);
-                }
-                finally
-                {
-                    _isPreviewParseRunning = false;
-                    if (_pendingColdPreviewRefresh && _isPageActive)
-                    {
-                        var _ = Dispatcher.RunAsync(
-                            global::Windows.UI.Core.CoreDispatcherPriority.Low,
-                            () => TypingTimer_Tick(null, null));
-                    }
+                    _pendingPreviewCssRefresh |= refreshCss;
+                    _typingTimer.Interval = TimeSpan.FromMilliseconds(EditorPerformancePolicy.PreviewDelay(_lastEditorText.Length, _lastPreviewWorkMilliseconds));
+                    _typingTimer.Start();
                 }
             }
         }
@@ -1575,13 +1610,15 @@ namespace MetroMarkdownEditor.Windows
         {
             if (ViewModel == null || ViewModel.ActiveDocument == null) return;
 
+            _previewRequestVersion++;
+            if (_previewCancellation != null) _previewCancellation.Cancel();
             _pendingColdPreviewRefresh = true;
             _pendingPreviewCssRefresh = _pendingPreviewCssRefresh || refreshCss;
             _pendingHiddenPreviewRefresh = true;
 
             // Document switches, settings changes and explicit refreshes already
             // have a ViewModel text snapshot, so start their worker immediately.
-            // Keystrokes continue to use the 160 ms debounce above.
+            // Keystrokes use the adaptive quiet period above.
             if (!_editorTextDirty && !_isPreviewParseRunning)
             {
                 TypingTimer_Tick(null, null);
@@ -1598,32 +1635,6 @@ namespace MetroMarkdownEditor.Windows
             return ViewModel != null && ViewModel.ViewMode != EditorViewMode.Write;
         }
 
-        private bool CanApplyBlockDiff(IReadOnlyList<MarkdownBlock> previousBlocks, IReadOnlyList<MarkdownBlock> nextBlocks)
-        {
-            if (previousBlocks == null || nextBlocks == null) return false;
-            if (previousBlocks.Count == 0 || previousBlocks.Count != nextBlocks.Count) return false;
-            return true;
-        }
-
-        private List<MarkdownBlock> FindChangedBlocks(IReadOnlyList<MarkdownBlock> previousBlocks, IReadOnlyList<MarkdownBlock> nextBlocks)
-        {
-            var changed = new List<MarkdownBlock>();
-            if (previousBlocks == null || nextBlocks == null) return changed;
-
-            var count = Math.Min(previousBlocks.Count, nextBlocks.Count);
-            for (int i = 0; i < count; i++)
-            {
-                var previous = previousBlocks[i];
-                var next = nextBlocks[i];
-                if (!string.Equals(previous.Html, next.Html, StringComparison.Ordinal))
-                {
-                    changed.Add(next);
-                }
-            }
-
-            return changed;
-        }
-
         private string GetNormalizedEditorText()
         {
             if (EditorBox == null || EditorBox.Document == null) return string.Empty;
@@ -1634,22 +1645,14 @@ namespace MetroMarkdownEditor.Windows
 
         private static string NormalizeRichEditText(string text)
         {
-            var normalized = (text ?? string.Empty).TrimEnd('\0');
-
-            // RichEditBox exposes one control-owned terminal paragraph marker.
-            // Remove exactly that marker and preserve every user-entered blank line.
-            if (normalized.EndsWith("\r", StringComparison.Ordinal))
-            {
-                normalized = normalized.Substring(0, normalized.Length - 1);
-            }
-
-            return normalized.Replace("\r\n", "\n").Replace('\r', '\n');
+            return EditorPerformancePolicy.NormalizeText(text, richEditTerminalMarker: true);
         }
 
         private string FlushPendingEditorText(bool refreshPreview)
         {
             if (!_editorTextDirty || _dirtyEditorDocument == null || EditorBox == null || EditorBox.Document == null)
             {
+                if (refreshPreview && ViewModel != null) ViewModel.RefreshPreview();
                 return _lastEditorText ?? string.Empty;
             }
 
@@ -1664,7 +1667,7 @@ namespace MetroMarkdownEditor.Windows
             }
             else
             {
-                _dirtyEditorDocument.Content = text;
+                _dirtyEditorDocument.CommitEditorText(text);
             }
 
             _lastEditorText = text;
@@ -1709,6 +1712,7 @@ namespace MetroMarkdownEditor.Windows
             FlushPendingEditorText(refreshPreview: false);
 
             var changedText = false;
+            string undoText = null;
             var before = _lastEditorText ?? string.Empty;
             _isUndoRedoLocked = true;
             try
@@ -1732,6 +1736,7 @@ namespace MetroMarkdownEditor.Windows
                     var current = GetNormalizedEditorText();
                     if (!string.Equals(current, before, StringComparison.Ordinal))
                     {
+                        undoText = current;
                         changedText = true;
                         break;
                     }
@@ -1747,10 +1752,11 @@ namespace MetroMarkdownEditor.Windows
             _editorRevision++;
             _editorTextDirty = true;
             _dirtyEditorDocument = ViewModel != null ? ViewModel.ActiveDocument : null;
-            var text = FlushPendingEditorText(refreshPreview: false);
-            _lastEditorText = text;
-            _pendingSyntaxRefresh = true;
-            HighlightMarkdownSyntax(forceFullDocument: false);
+            if (_dirtyEditorDocument != null) _dirtyEditorDocument.CommitEditorText(undoText);
+            _lastEditorText = undoText;
+            _editorTextDirty = false;
+            _dirtyEditorDocument = null;
+            _pendingSyntaxRefresh = false;
             if (ViewModel != null) ViewModel.RefreshPreview();
             UpdateEditorBottomSpacer();
         }
@@ -1854,9 +1860,8 @@ namespace MetroMarkdownEditor.Windows
                 _lastPreviewScrollRatio = -1;
                 SetEditorTextWithoutNotification(text);
                 
-                // 每次 SetText 后立即应用格式，然后再高亮
-                ApplyEditorFormatting();
-                HighlightMarkdownSyntax(forceFullDocument: true);
+                _pendingSyntaxRefresh = true;
+                _syntaxTimer.Start();
                 
                 ResetUndoRedo();
                 UpdateEditorBottomSpacer();
@@ -1866,13 +1871,19 @@ namespace MetroMarkdownEditor.Windows
         private void SetEditorTextWithoutNotification(string text)
         {
             _suppressTextChanged = true;
+            var doc = EditorBox.Document;
+            doc.UndoLimit = 0;
+            doc.BatchDisplayUpdates();
             try
             {
                 _highlightRange = new MarkdownHighlightRange();
-                EditorBox.Document.SetText(TextSetOptions.None, text ?? string.Empty);
+                doc.SetText(TextSetOptions.None, text ?? string.Empty);
+                ApplyEditorFormatting();
             }
             finally
             {
+                doc.ApplyDisplayUpdates();
+                doc.UndoLimit = 100;
                 _suppressTextChanged = false;
                 _pendingAutoPairCharacter = null;
             }
@@ -1880,7 +1891,7 @@ namespace MetroMarkdownEditor.Windows
 
         private static string NormalizeLineEndings(string text)
         {
-            return (text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
+            return EditorPerformancePolicy.NormalizeText(text);
         }
 
         /// <summary>
@@ -1888,10 +1899,18 @@ namespace MetroMarkdownEditor.Windows
         /// </summary>
         private void HighlightMarkdownSyntax(bool forceFullDocument)
         {
+            if (EditorBox.FocusState != FocusState.Unfocused)
+            {
+                _pendingSyntaxRefresh = true;
+                return;
+            }
             // Syntax display is intentionally viewport-virtualized for every
             // document. The flag is retained for call-site compatibility; themes,
             // edits and navigation all use the same bounded rendering path.
-            _highlightRange = MarkdownHighlightingHelper.HighlightVisible(EditorBox, _highlightRange);
+            var wasSuppressed = _suppressTextChanged;
+            _suppressTextChanged = true;
+            try { _highlightRange = MarkdownHighlightingHelper.HighlightVisible(EditorBox, _highlightRange); }
+            finally { _suppressTextChanged = wasSuppressed; }
         }
 
         // ==========================================
@@ -1945,7 +1964,7 @@ namespace MetroMarkdownEditor.Windows
             // Navigation may complete after one or more queued refreshes. Apply
             // the newest prepared HTML once; do not read the whole RichEditBox or
             // inject the same preview twice.
-            if (_pendingRender || !string.IsNullOrEmpty(ViewModel != null ? ViewModel.PreviewContent : null))
+            if (_pendingRender || (ViewModel != null && ViewModel.PreviewBlocks.Count > 0))
             {
                 _pendingRender = false;
                 await RenderPreviewAsync();
