@@ -1,0 +1,185 @@
+<SettingsFlyout
+    x:Class="MetroMarkdownEditor.Windows.MarkdownSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    HorizontalContentAlignment="Stretch"
+    Title="Markdown"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
+
+    <!-- SettingsFlyout owns the single scrolling viewport and content padding. -->
+        <StackPanel>
+            <TextBlock Text="Syntax Preference"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,0,0,8" />
+            <ToggleSwitch Header="Strict Mode"
+                          IsOn="{Binding StrictMode, Mode=TwoWay}" />
+            <TextBlock Text="Only apply to quotes and lists created from menu bar or hybrid view."
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Opacity="0.6"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8" />
+            <TextBlock Text="Heading Style"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding HeadingStyleIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="atx (#)" />
+                <ComboBoxItem Content="setext (===)" />
+                <ComboBoxItem Content="atx with suffix (# ... #)" />
+                <ComboBoxItem Content="variable-width setext (=====)" />
+            </ComboBox>
+            <TextBlock Text="Unordered List"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding UnorderedListStyleIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="- item" />
+                <ComboBoxItem Content="+ item" />
+                <ComboBoxItem Content="* item" />
+            </ComboBox>
+            <TextBlock Text="Ordered List"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding OrderedListStyleIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="1. 2. 3." />
+                <ComboBoxItem Content="1. 1. 1." />
+            </ComboBox>
+
+            <TextBlock Text="Syntax Support"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Auto Links"
+                      IsChecked="{Binding AutoLinks, Mode=TwoWay}" />
+            <CheckBox Content="Inline Math"
+                      IsChecked="{Binding InlineMath, Mode=TwoWay}" />
+            <CheckBox Content="Subscript"
+                      IsChecked="{Binding Subscript, Mode=TwoWay}" />
+            <CheckBox Content="Superscript"
+                      IsChecked="{Binding Superscript, Mode=TwoWay}" />
+            <CheckBox Content="Highlight"
+                      IsChecked="{Binding Highlight, Mode=TwoWay}" />
+            <CheckBox Content="GitHub Style Alert"
+                      IsChecked="{Binding GithubStyleAlert, Mode=TwoWay}" />
+            <CheckBox Content="Diagrams (Sequence, Flowchart and Mermaid)"
+                      IsChecked="{Binding Diagrams, Mode=TwoWay}" />
+
+            <TextBlock Text="Smart Punctuation"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <ComboBox SelectedIndex="{Binding SmartPunctuationModeIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Disabled" />
+                <ComboBoxItem Content="Convert on Input" />
+                <ComboBoxItem Content="Convert on Render" />
+            </ComboBox>
+            <CheckBox Content="Smart Quotes"
+                      IsChecked="{Binding SmartQuotes, Mode=TwoWay}"
+                      Margin="0,8,0,0" />
+            <CheckBox Content="Smart Dashes"
+                      IsChecked="{Binding SmartDashes, Mode=TwoWay}" />
+            <CheckBox Content="Remap Unicode Punctuation on Parse"
+                      IsChecked="{Binding RemapUnicodePunctuationOnParse, Mode=TwoWay}" />
+
+            <TextBlock Text="Code Fences"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Display line numbers for code fences"
+                      IsChecked="{Binding DisplayLineNumbersForCodeFences, Mode=TwoWay}" />
+            <CheckBox Content="Auto wrap long lines"
+                      IsChecked="{Binding AutoWrapLongLines, Mode=TwoWay}" />
+            <CheckBox Content="Use Shift+Tab to auto indent selected code"
+                      IsChecked="{Binding UseShiftTabToAutoIndentSelectedCode, Mode=TwoWay}" />
+            <TextBlock Text="Indent Size for Code"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding CodeIndentSizeIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="2" />
+                <ComboBoxItem Content="3" />
+                <ComboBoxItem Content="4" />
+                <ComboBoxItem Content="5" />
+            </ComboBox>
+            <TextBlock Text="Default Code Language"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <TextBox Text="{Binding DefaultCodeLanguage, Mode=TwoWay}"
+                     PlaceholderText="(None), Last Used, ABAP, apl, asciiarmor, ASN.1..." />
+            <TextBlock Text="Apply Default Code Language When"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding ApplyDefaultCodeLanguageWhenIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="When add code fences via Markdown" />
+                <ComboBoxItem Content="When add code fences via Menubar" />
+                <ComboBoxItem Content="Both" />
+            </ComboBox>
+
+            <TextBlock Text="Math"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Inline Math"
+                      IsChecked="{Binding InlineMath, Mode=TwoWay}" />
+            <CheckBox Content="LaTeX Math Delimiter \( \) \[ \]"
+                      IsChecked="{Binding LatexMathDelimiters, Mode=TwoWay}" />
+            <CheckBox Content="Code Block Math (```math code block)"
+                      IsChecked="{Binding CodeBlockMath, Mode=TwoWay}" />
+            <CheckBox Content="Enable physics package"
+                      IsChecked="{Binding PhysicsPackageEnabled, Mode=TwoWay}" />
+            <TextBlock Text="Auto Numbering Math Equations"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding AutoNumberingMathEquationsIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="No Automatic Equation Numbering" />
+                <ComboBoxItem Content="Use AMS Numbering Rules" />
+                <ComboBoxItem Content="Auto Numbering for All Math Equations" />
+            </ComboBox>
+            <TextBlock Text="When copy / export as HTML"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding MathHtmlExportModeIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Use Rendered SVG" />
+                <ComboBoxItem Content="Use TeX Source" />
+            </ComboBox>
+
+            <TextBlock Text="Whitespace / Line Break"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Indent first line of paragraphs"
+                      IsChecked="{Binding IndentFirstLineOfParagraphs, Mode=TwoWay}" />
+            <CheckBox Content="Visible &lt;br/&gt;"
+                      IsChecked="{Binding VisibleLineBreaks, Mode=TwoWay}" />
+            <TextBlock Text="When Writing"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding WritingWhitespaceModeIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Preserve sequential whitespace and single line break" />
+                <ComboBoxItem Content="Ignore sequential whitespace and single line break" />
+            </ComboBox>
+            <TextBlock Text="Export / Print"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,12,0,4" />
+            <ComboBox SelectedIndex="{Binding ExportPrintWhitespaceModeIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Preserve sequential whitespace and single line break" />
+                <ComboBoxItem Content="Ignore sequential whitespace and single line break" />
+            </ComboBox>
+        </StackPanel>
+
+</SettingsFlyout>

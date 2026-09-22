@@ -1,0 +1,62 @@
+<SettingsFlyout
+    x:Class="MetroMarkdownEditor.Windows.ImageSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    HorizontalContentAlignment="Stretch"
+    Title="Image"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
+
+    <!-- SettingsFlyout owns the single scrolling viewport and content padding. -->
+        <StackPanel>
+            <TextBlock Text="When Insert"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,0,0,8" />
+            <ComboBox SelectedIndex="{Binding InsertActionIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="No special action" />
+                <ComboBoxItem Content="Copy image to current folder (./)" />
+                <ComboBoxItem Content="Copy image to ./assets" />
+                <ComboBoxItem Content="Copy image to ./${filename}.assets" />
+                <ComboBoxItem Content="Upload image (unavailable)" IsEnabled="False" />
+                <ComboBoxItem Content="Copy image to custom folder" />
+            </ComboBox>
+            <TextBox Text="{Binding CustomFolder, Mode=TwoWay}"
+                     PlaceholderText="Custom folder"
+                     HorizontalAlignment="Stretch"
+                     Margin="0,8,0,0" />
+            <CheckBox Content="Apply above rules to local images"
+                      IsChecked="{Binding ApplyRulesToLocalImages, Mode=TwoWay}"
+                      Margin="0,8,0,0" />
+            <CheckBox Content="Apply above rules to online images"
+                      IsChecked="{Binding ApplyRulesToOnlineImages, Mode=TwoWay}" />
+
+
+            <TextBlock Text="Preferred Image Syntax"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,28,0,8" />
+            <CheckBox Content="Use relative path if possible"
+                      IsChecked="{Binding UseRelativePathIfPossible, Mode=TwoWay}" />
+            <CheckBox Content="Add ./ for relative path"
+                      IsChecked="{Binding AddDotSlashForRelativePath, Mode=TwoWay}" />
+            <CheckBox Content="Auto escape image URL when insert"
+                      IsChecked="{Binding AutoEscapeImageUrlWhenInsert, Mode=TwoWay}" />
+
+            <TextBlock Text="Online Image Cache" FontSize="18" FontWeight="SemiBold" Margin="0,28,0,8" />
+            <TextBlock x:Name="CacheSizeText" Text="Calculating..." TextWrapping="Wrap" Margin="0,0,0,12" />
+            <TextBlock Text="Maximum size (MB)" Margin="0,0,0,4" />
+            <TextBox x:Name="CacheLimitBox" InputScope="Number" />
+            <TextBlock Text="0 disables caching. Default: 128 MB. Oldest cached images are removed when the limit is reached." TextWrapping="Wrap" Opacity="0.7" Margin="0,8,0,12" />
+            <Button Content="Apply limit" Click="ApplyCacheLimit_Click" HorizontalAlignment="Stretch" />
+            <Button Content="Clear image cache" Click="ClearCache_Click" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+            <Button Content="Refresh cache size" Click="RefreshCacheSize_Click" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+            <TextBlock x:Name="CacheStatusText" TextWrapping="Wrap" Margin="0,8,0,0" />
+            <TextBlock Text="Image Upload" FontSize="18" FontWeight="SemiBold" Margin="0,28,0,8" />
+            <TextBlock Text="Local PicGo, PicList and custom-command uploaders have been retired: Windows 8.1 Store apps cannot launch desktop commands or normally connect to localhost. Paste an online image URL as Markdown instead." TextWrapping="Wrap" Opacity="0.7" />
+        </StackPanel>
+
+</SettingsFlyout>

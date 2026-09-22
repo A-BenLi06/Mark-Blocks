@@ -5,6 +5,8 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 #if !WINDOWS_PHONE_APP
 using MetroMarkdownEditor.Windows;
+#endif
+#if !WINDOWS_PHONE_APP && !WINDOWS_UWP
 using Windows.UI.ApplicationSettings;
 #endif
 using Windows.UI.Xaml;
@@ -43,7 +45,7 @@ namespace MetroMarkdownEditor
                 locator.Theme.ApplyThemeToRoot();
             }
 
-#if !WINDOWS_PHONE_APP
+#if !WINDOWS_PHONE_APP && !WINDOWS_UWP
             SettingsPane.GetForCurrentView().CommandsRequested += OnCommandsRequested;
 #endif
 
@@ -81,7 +83,7 @@ namespace MetroMarkdownEditor
         }
 #endif
 
-#if !WINDOWS_PHONE_APP
+#if !WINDOWS_PHONE_APP && !WINDOWS_UWP
         private void OnCommandsRequested(SettingsPane sender, SettingsPaneCommandsRequestedEventArgs args)
         {
             // 我为你生成了一个随机的 GUID：28a24559-0017-4959-9b93-669e20032908

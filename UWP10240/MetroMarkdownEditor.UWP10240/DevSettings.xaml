@@ -1,0 +1,27 @@
+<SettingsFlyout
+    x:Class="MetroMarkdownEditor.Windows.DevSettings"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    HorizontalContentAlignment="Stretch"
+    Title="Developer"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Foreground="{ThemeResource ApplicationForegroundThemeBrush}">
+
+    <!-- SettingsFlyout owns the single scrolling viewport and content padding. -->
+        <StackPanel>
+            <!-- Mermaid Debug Section -->
+            <TextBlock Text="Mermaid Debugging"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Margin="0,0,0,8" />
+            <TextBlock Text="Show detailed initialization information for Mermaid diagrams in the preview pane."
+                       Foreground="{ThemeResource ApplicationForegroundThemeBrush}"
+                       Opacity="0.6"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8" />
+            <ToggleSwitch Header="Mermaid initialization information"
+                          IsOn="{Binding MermaidDebugEnabled, Mode=TwoWay}" />
+        </StackPanel>
+
+</SettingsFlyout>

@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.0.0
+MinimumVisualStudioVersion = 14.0.25420.1
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "MetroMarkdownEditor.Shared", "..\MetroMarkdownEditor\MetroMarkdownEditor.Shared\MetroMarkdownEditor.Shared.shproj", "{A1CBC047-177A-404F-A7B4-E26AE4980ED1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MetroMarkdownEditor.UWP10240", "MetroMarkdownEditor.UWP10240\MetroMarkdownEditor.UWP10240.csproj", "{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}"
+EndProject
+Global
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		..\MetroMarkdownEditor\MetroMarkdownEditor.Shared\MetroMarkdownEditor.Shared.projitems*{65a4d541-8e85-4c7f-a2f2-6d5b7f5a1024}*SharedItemsImports = 4
+		..\MetroMarkdownEditor\MetroMarkdownEditor.Shared\MetroMarkdownEditor.Shared.projitems*{a1cbc047-177a-404f-a7b4-e26ae4980ed1}*SharedItemsImports = 13
+	EndGlobalSection
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Debug|x64.ActiveCfg = Debug|x64
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Debug|x64.Build.0 = Debug|x64
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Debug|x86.ActiveCfg = Debug|x86
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Debug|x86.Build.0 = Debug|x86
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Release|x64.ActiveCfg = Release|x64
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Release|x64.Build.0 = Release|x64
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Release|x86.ActiveCfg = Release|x86
+		{65A4D541-8E85-4C7F-A2F2-6D5B7F5A1024}.Release|x86.Build.0 = Release|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

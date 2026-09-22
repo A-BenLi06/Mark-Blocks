@@ -1,0 +1,65 @@
+using System;
+using MetroMarkdownEditor.ViewModels;
+using MetroMarkdownEditor.Services;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
+using Windows.Storage.Pickers;
+
+namespace MetroMarkdownEditor.Windows
+{
+    public sealed partial class ThemeSettings : SettingsFlyout
+    {
+        private BackgroundService _backgroundService;
+
+        public ThemeSettings()
+        {
+            InitializeComponent();
+
+            var locator = App.Current.Resources["Locator"] as ViewModelLocator;
+            if (locator != null)
+            {
+                // Set Theme as DataContext for the dark theme toggle
+                DataContext = locator.Theme;
+                _backgroundService = locator.Background;
+            }
+        }
+
+        private async void ChooseBackground_Click(object sender, RoutedEventArgs e)
+        {
+            var picker = new FileOpenPicker();
+            picker.ViewMode = PickerViewMode.Thumbnail;
+            picker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
+            picker.FileTypeFilter.Add(".jpg");
+            picker.FileTypeFilter.Add(".jpeg");
+            picker.FileTypeFilter.Add(".png");
+            picker.FileTypeFilter.Add(".bmp");
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null && _backgroundService != null)
+            {
+                await _backgroundService.SetBackgroundFromFileAsync(file);
+                // Auto-switch to Custom mode
+                _backgroundService.BackgroundMode = MainPageBackgroundMode.Custom;
+            }
+        }
+
+        private void ResetZoom_Click(object sender, RoutedEventArgs e)
+        {
+            var theme = DataContext as ThemeService;
+            if (theme != null)
+            {
+                theme.ResetZoom();
+            }
+        }
+
+        private void ResetReadingSpeed_Click(object sender, RoutedEventArgs e)
+        {
+            var theme = DataContext as ThemeService;
+            if (theme != null)
+            {
+                theme.ResetReadingSpeed();
+            }
+        }
+    }
+}
+
