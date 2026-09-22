@@ -1,0 +1,27 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "MetroMarkdownEditor.Shared", "..\MetroMarkdownEditor\MetroMarkdownEditor.Shared\MetroMarkdownEditor.Shared.shproj", "{A1CBC047-177A-404F-A7B4-E26AE4980ED1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MetroMarkdownEditor.UWP10240.ARM", "MetroMarkdownEditor.UWP10240.ARM\MetroMarkdownEditor.UWP10240.ARM.csproj", "{F2EA4AA3-1CA4-4F0A-97A8-2DEEA26A1032}"
+EndProject
+Global
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		..\MetroMarkdownEditor\MetroMarkdownEditor.Shared\MetroMarkdownEditor.Shared.projitems*{f2ea4aa3-1ca4-4f0a-97a8-2deea26a1032}*SharedItemsImports = 4
+		..\MetroMarkdownEditor\MetroMarkdownEditor.Shared\MetroMarkdownEditor.Shared.projitems*{a1cbc047-177a-404f-a7b4-e26ae4980ed1}*SharedItemsImports = 13
+	EndGlobalSection
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM = Debug|ARM
+		Release|ARM = Release|ARM
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F2EA4AA3-1CA4-4F0A-97A8-2DEEA26A1032}.Debug|ARM.ActiveCfg = Debug|ARM
+		{F2EA4AA3-1CA4-4F0A-97A8-2DEEA26A1032}.Debug|ARM.Build.0 = Debug|ARM
+		{F2EA4AA3-1CA4-4F0A-97A8-2DEEA26A1032}.Release|ARM.ActiveCfg = Release|ARM
+		{F2EA4AA3-1CA4-4F0A-97A8-2DEEA26A1032}.Release|ARM.Build.0 = Release|ARM
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

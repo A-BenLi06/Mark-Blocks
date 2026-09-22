@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">ARM</Platform>
+    <ProjectGuid>{F2EA4AA3-1CA4-4F0A-97A8-2DEEA26A1032}</ProjectGuid>
+    <OutputType>AppContainerExe</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>MetroMarkdownEditor</RootNamespace>
+    <AssemblyName>MetroMarkdownEditor.UWP10240</AssemblyName>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
+    <TargetPlatformVersion>10.0.26100.0</TargetPlatformVersion>
+    <TargetPlatformMinVersion>10.0.10240.0</TargetPlatformMinVersion>
+    <RuntimeIdentifiers>win10-arm</RuntimeIdentifiers>
+    <MinimumVisualStudioVersion>14</MinimumVisualStudioVersion>
+    <FileAlignment>512</FileAlignment>
+    <ProjectTypeGuids>{A5A43C5B-DE2A-4C0C-9213-0A381AF9435A};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
+    <AppxBundlePlatforms>ARM</AppxBundlePlatforms>
+    <AppxBundle>Never</AppxBundle>
+    <AppxPackageDir>$(MSBuildProjectDirectory)\AppPackages\2.3.0\</AppxPackageDir>
+    <AppxSymbolPackageEnabled>False</AppxSymbolPackageEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|ARM'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\ARM\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE;NETFX_CORE;WINDOWS_UWP</DefineConstants>
+    <NoWarn>;2008</NoWarn>
+    <DebugType>full</DebugType>
+    <PlatformTarget>ARM</PlatformTarget>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <ErrorReport>prompt</ErrorReport>
+    <Prefer32Bit>true</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|ARM'">
+    <OutputPath>bin\ARM\Release\</OutputPath>
+    <DefineConstants>TRACE;NETFX_CORE;WINDOWS_UWP</DefineConstants>
+    <Optimize>true</Optimize>
+    <NoWarn>;2008</NoWarn>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>ARM</PlatformTarget>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <ErrorReport>prompt</ErrorReport>
+    <Prefer32Bit>true</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform" Version="6.2.14" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\MainPage.xaml.cs"><Link>MainPage.xaml.cs</Link><DependentUpon>MainPage.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\AutoSaveSettings.xaml.cs"><Link>AutoSaveSettings.xaml.cs</Link><DependentUpon>AutoSaveSettings.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\MarkdownSettings.xaml.cs"><Link>MarkdownSettings.xaml.cs</Link><DependentUpon>MarkdownSettings.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\EditorSettings.xaml.cs"><Link>EditorSettings.xaml.cs</Link><DependentUpon>EditorSettings.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\ImageSettings.xaml.cs"><Link>ImageSettings.xaml.cs</Link><DependentUpon>ImageSettings.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\ExportSettings.xaml.cs"><Link>ExportSettings.xaml.cs</Link><DependentUpon>ExportSettings.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\EditorPage.xaml.cs"><Link>EditorPage.xaml.cs</Link><DependentUpon>EditorPage.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\ThemeSettings.xaml.cs"><Link>ThemeSettings.xaml.cs</Link><DependentUpon>ThemeSettings.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\DevSettings.xaml.cs"><Link>DevSettings.xaml.cs</Link><DependentUpon>DevSettings.xaml</DependentUpon></Compile>
+    <Compile Include="..\MetroMarkdownEditor.UWP10240\Properties\AssemblyInfo.cs"><Link>Properties\AssemblyInfo.cs</Link></Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <AppxManifest Include="Package.appxmanifest"><SubType>Designer</SubType></AppxManifest>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Properties\Default.rd.xml" />
+    <Content Include="..\MetroMarkdownEditor.UWP10240\Assets\**\*.*">
+      <Link>Assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\MainPage.xaml"><Link>MainPage.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\AutoSaveSettings.xaml"><Link>AutoSaveSettings.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\MarkdownSettings.xaml"><Link>MarkdownSettings.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\EditorSettings.xaml"><Link>EditorSettings.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\ImageSettings.xaml"><Link>ImageSettings.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\ExportSettings.xaml"><Link>ExportSettings.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\EditorPage.xaml"><Link>EditorPage.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\ThemeSettings.xaml"><Link>ThemeSettings.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="..\MetroMarkdownEditor.UWP10240\DevSettings.xaml"><Link>DevSettings.xaml</Link><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Markdig, Version=0.15.5.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\Markdig.0.15.5\lib\portable40-net40+sl5+win8+wp8+wpa81\Markdig.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">
+    <VisualStudioVersion>14.0</VisualStudioVersion>
+  </PropertyGroup>
+  <Import Project="..\..\MetroMarkdownEditor\MetroMarkdownEditor.Shared\MetroMarkdownEditor.Shared.projitems" Label="Shared" />
+  <Import Project="$(MSBuildExtensionsPath)\Microsoft\WindowsXaml\v$(VisualStudioVersion)\Microsoft.Windows.UI.Xaml.CSharp.targets" />
+  <!-- Windows SDK 26100 blocks ARM32 solely by target-version policy. Store-upload
+       builds produce IL and use the installed VS2015 ARM runtime, so validate this
+       ARM-only project against the last ARM32-capable SDK version instead. -->
+  <Target Name="_ValidateConfiguration">
+    <ValidateConfiguration
+      TargetPlatformMinVersion="$(TargetPlatformMinVersion)"
+      TargetPlatformVersion="10.0.22621.0"
+      ProjectLanguage="$(Language)"
+      VsTelemetrySession="$(VsTelemetrySession)"
+      TargetPlatformIdentifier="$(TargetPlatformIdentifier)"
+      Platform="$(Platform)" />
+  </Target>
+</Project>
